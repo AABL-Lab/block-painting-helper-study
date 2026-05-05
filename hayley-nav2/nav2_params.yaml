@@ -179,3 +179,12 @@ docking_server:
       staging_x_offset: -0.7
       use_external_detection_pose: false
       use_battery_status: false
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    set_initial_pose: true
+    initial_pose:
+      x: 0.105
+      y: -0.406
+      yaw: 0.0

@@ -4,7 +4,7 @@ demo.launch.py
 --------------
 Launches the full block-painting-helper demo stack:
   0. rosbridge          — turtlebot communication
-  1. navstack           - SLAM node that works with Turtlebot bridge
+  1. navstack           - load map and Turtlebot bridge
   2. person_tracker      — camera, static TF, person tracker, top-down viz
   3. arm.launch.py       — UR3e driver + virtual spring controller + torque relay 4. moveit              - UR3e moveit server
   5. bph_pickmeup_node   — arm pick-and-place action server
@@ -38,6 +38,8 @@ from launch.substitutions import EnvironmentVariable, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch.actions import TimerAction
 
+SetEnvironmentVariable('CYCLONEDDS_URI', 'file:///home/katallen/cyclonedds.xml')
+
 
 def generate_launch_description():
     nav_pkg     = get_package_share_directory("nav_to_goal")
@@ -59,13 +61,6 @@ def generate_launch_description():
         value=_venv_site + ":" + os.environ.get("PYTHONPATH", ""),
     )
 
-    setcyclone = SetEnvironmentVariable(
-        SetEnvironmentVariable(
-            name="CYCLONEDDS_URI",
-            value="<CycloneDDS><Domain><Discovery><TypeLookupService><Enable>false</Enable></TypeLookupService></Discovery></Domain></CycloneDDS>"
-        )
-
-        
     # ── Shared / navigation args ─────────────────────────────────────────────
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time", default_value="false",
@@ -178,6 +173,8 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration("use_sim_time")
 
+
+    
     # ── 0. ROSBridge ─────────────────────────────────────────────────────────
     turtlebridge_bringup = Node(
         package="nav_to_goal",
@@ -196,17 +193,30 @@ def generate_launch_description():
             "params_file":       LaunchConfiguration("params_file"),
         }.items(),
     )
-
-    slam_bringup = IncludeLaunchDescription(
+    localization_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(slam_pkg,
-                         "launch",
-                         "online_async_launch.py")
-        ),
-            launch_arguments={
-                "use_sim_time": use_sim_time,
-            }.items(),
-            )
+            os.path.join(nav2_pkg, "launch", "localization_launch.py")
+    ),
+        launch_arguments={
+            "use_sim_time":  use_sim_time,
+            "params_file":   LaunchConfiguration("params_file"),
+            "map":           "/home/katallen/maps/my_map.yaml",
+        }.items(),
+    )
+
+
+
+    
+# #    slam_bringup = IncludeLaunchDescription(
+# #        PythonLaunchDescriptionSource(
+# #            os.path.join(slam_pkg,
+#                          "launch",
+#                          "online_async_launch.py")
+#         ),
+#             launch_arguments={
+#                 "use_sim_time": use_sim_time,
+#             }.items(),
+#             )
     
     # IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
@@ -305,9 +315,11 @@ def generate_launch_description():
         }],
     )
 
+
+    
     return LaunchDescription([
         set_pythonpath,             # must come first
-        setcyclone,
+
         # declare all args
         use_sim_time_arg,
         params_file_arg,
@@ -344,10 +356,10 @@ def generate_launch_description():
         LogInfo(msg="[demo] Starting ROSBridge ..."),
         turtlebridge_bringup,
 
-        LogInfo(msg="[demo] Starting Nav2 + SLAM ..."),
+        LogInfo(msg="[demo] Starting Nav2 + localization ..."),
         TimerAction(
             period=5.0,
-            actions=[slam_bringup],
+            actions=[localization_bringup],
             ),
         
         TimerAction(

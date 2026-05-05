@@ -56,11 +56,11 @@ class RobotFetchNode(Node):
     def __init__(self):
         super().__init__("robot_fetch_smach")
 
-        self.declare_parameter("home_x", 0.365)
-        self.declare_parameter("home_y", -0.195)
-        self.declare_parameter("home_yaw", 0.0)
-        self.declare_parameter("supply_closet_x", 2.6)
-        self.declare_parameter("supply_closet_y", -0.195)
+        self.declare_parameter("home_x", -2.814
+        self.declare_parameter("home_y", -0.480)
+        self.declare_parameter("home_yaw", -1.974)
+        self.declare_parameter("supply_closet_x", 0.105)
+        self.declare_parameter("supply_closet_y", -0.406)
         self.declare_parameter("supply_closet_yaw", 0.0)
 
         self.requested_object_color = "red"

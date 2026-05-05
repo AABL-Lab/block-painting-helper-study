@@ -401,7 +401,7 @@ class ColorPickerNode(Node):
             fallback.pose.position.y = pt.point.y
             fallback.pose.position.z = pt.point.z
             fallback.pose.orientation.w = 1.0
-            return fallback, pt.header.frame_id
+            return fallback
 
         pose = PoseStamped()
         pose.header = pt_map.header

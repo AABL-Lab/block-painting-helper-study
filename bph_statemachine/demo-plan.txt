@@ -20,7 +20,7 @@ ros2 launch bph_statemachine fakenavdemo.launch.py
 
 Window 2:
 cd ~/sandbox/src/block-painting-helper/
-python3 mocknav
+python3 mocknav.py
 
 Open window on TB to 
 http://10.5.10.71:8080/humanrequest
@@ -42,6 +42,7 @@ ros2 service call /virtual_spring_node/add_spring \
         inner_radius: 0.0,
         outer_radius: 0.0
     }"
+
 In a local machine window:
 ros2 run v4l2_camera v4l2_camera_node  --ros-args -r image_raw:=/bph_overhead_camera/image_raw -r video_device:='/dev/video0'
 

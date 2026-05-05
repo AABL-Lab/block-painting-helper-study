@@ -59,11 +59,6 @@ def generate_launch_description():
         value=_venv_site + ":" + os.environ.get("PYTHONPATH", ""),
     )
 
-    setcyclone = SetEnvironmentVariable(
-        SetEnvironmentVariable(
-            name="CYCLONEDDS_URI",
-            value="<CycloneDDS><Domain><Discovery><TypeLookupService><Enable>false</Enable></TypeLookupService></Discovery></Domain></CycloneDDS>"
-        )
 
         
     # ── Shared / navigation args ─────────────────────────────────────────────
@@ -307,7 +302,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         set_pythonpath,             # must come first
-        setcyclone,
+        #setcyclone,
         # declare all args
         use_sim_time_arg,
         params_file_arg,
