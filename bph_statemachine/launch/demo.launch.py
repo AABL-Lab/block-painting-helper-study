@@ -5,6 +5,7 @@ demo.launch.py
 Launches the full block-painting-helper demo stack:
   0. rosbridge          — turtlebot communication
   1. navstack           - load map and Turtlebot bridge
+  1.5 navigator_node navigation server
   2. person_tracker      — camera, static TF, person tracker, top-down viz
   3. arm.launch.py       — UR3e driver + virtual spring controller + torque relay 4. moveit              - UR3e moveit server
   5. bph_pickmeup_node   — arm pick-and-place action server
@@ -37,6 +38,10 @@ from launch.substitutions import LaunchConfiguration
 from launch.substitutions import EnvironmentVariable, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch.actions import TimerAction
+from launch.actions import RegisterEventHandler, EmitEvent, Shutdown
+from launch.events import Shutdown as ShutdownEvent
+from launch.event_handlers import OnProcessExit
+from launch.actions import ExecuteProcess
 
 SetEnvironmentVariable('CYCLONEDDS_URI', 'file:///home/katallen/cyclonedds.xml')
 
@@ -72,6 +77,10 @@ def generate_launch_description():
         default_value=os.path.join(nav_pkg, "config", "slam_params.yaml"),
         description="slam_toolbox parameter YAML",
     )
+    goal_x_arg = DeclareLaunchArgument("goal_x", default_value="2.0")
+    goal_y_arg = DeclareLaunchArgument("goal_y", default_value="1.0")
+    goal_yaw_arg = DeclareLaunchArgument("goal_yaw", default_value="0.0")
+
     depth_image_topic_arg = DeclareLaunchArgument(
         "depth_image_topic", default_value="/tb-camera/depth/image_raw",
     )
@@ -81,7 +90,7 @@ def generate_launch_description():
     robot_base_frame_arg = DeclareLaunchArgument(
         "robot_base_frame", default_value="turtlebot/base_link",
     )
-
+    
     # ── Overhead camera pose args ────────────────────────────────────────────
     cam_x_arg     = DeclareLaunchArgument("cam_x",     default_value="0.0")
     cam_y_arg     = DeclareLaunchArgument("cam_y",     default_value="0.0")
@@ -183,7 +192,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    # ── 1. Nav2 + SLAM  ──────────────────────────────────────
+    # ── 1. Nav2   ──────────────────────────────────────
     nav_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav2_pkg, "launch", "navigation_launch.py")
@@ -204,7 +213,20 @@ def generate_launch_description():
         }.items(),
     )
 
-
+    # ── 4. Navigator goal node ─────────────────────────────────────────────
+    navigator_node = Node(
+        package="nav_to_goal",
+        executable="navigator_node",
+        name="navigator_node",
+        output="screen",
+        parameters=[{
+            "goal_x": LaunchConfiguration("goal_x"),
+            "goal_y": LaunchConfiguration("goal_y"),
+            "goal_yaw": LaunchConfiguration("goal_yaw"),
+            "robot_base_frame": LaunchConfiguration("robot_base_frame"),
+            "use_sim_time": use_sim_time,
+        }],
+    )
 
     
 # #    slam_bringup = IncludeLaunchDescription(
@@ -253,8 +275,21 @@ def generate_launch_description():
         executable="simple_sm_node",
         name="robot_fetch_smach",
         output="screen",
+        parameters=[{
+        "supply_closet_x": -1.109,   # actual supply closet position
+        "supply_closet_y": -0.803,
+        "supply_closet_yaw": 0.0,
+        }],
     )
 
+
+    shutdown_on_sm_exit = RegisterEventHandler(
+        OnProcessExit(
+            target_action=state_machine_node,
+            on_exit=[EmitEvent(event=ShutdownEvent())]
+        )
+)
+    
     # ── 4. Arm pick-and-place action server ───────────────────────────────────
     pickmeup_node = Node(
         package="bph_pickmeup",
@@ -265,12 +300,30 @@ def generate_launch_description():
 
     moveit_bringup = IncludeLaunchDescription(  
          PythonLaunchDescriptionSource(
-             os.path.join(moveit_pkg, "launch","ur_moveit.launch.py")),
+             os.path.join(bph_sm_pkg, "launch","ur_moveit.launch.py")),
          launch_arguments={
              "ur_type": "ur3e",
              "robot_ip": LaunchConfiguration("robot_ip"),
              "launch_rviz": LaunchConfiguration("launch_rviz")}.items(),
+        
      )
+
+#    set_start_tolerance = TimerAction(
+#        period=10.0,  # give MoveIt time to fully start
+#        actions=[ExecuteProcess(
+#            cmd=['ros2', 'param', 'set', '/move_group',
+#                 'trajectory_execution.allowed_start_tolerance', '0.05'],
+#            output='screen',
+#        )]
+#    )
+
+    collision_scene_publisher = Node(
+        package="bph_pickmeup",
+        executable="bph_collision_scene",
+        name="bph_pickmeup_collision_scene",
+        output="screen",
+    )
+
 
     # ── 5. UR3e driver + virtual spring + torque relay ───────────────────────
     #
@@ -315,7 +368,28 @@ def generate_launch_description():
         }],
     )
 
+    arm_base_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='arm_base_to_map_tf',
+        arguments=[
+            '-0.2176', '-0.665', '0.936',  # x, y, z in map frame
+            '-1.57', '0.0', '0.0',         # yaw, pitch, roll
+            'map', 'world'
+        ]
+    )
 
+    camera_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='camera_to_arm_tf',
+        arguments=[
+            '0.044', '-0.010', '1.785',   # x, y, z above arm base
+            '0.0', str(math.pi), '0.0',   # yaw, pitch, roll — pointing down
+            'world',
+            'bph_overhead_camera_optical_frame'  # must match camera_info frame_id
+        ]
+    )
     
     return LaunchDescription([
         set_pythonpath,             # must come first
@@ -327,6 +401,7 @@ def generate_launch_description():
         depth_image_topic_arg,
         depth_info_topic_arg,
         robot_base_frame_arg,
+        goal_x_arg, goal_y_arg, goal_yaw_arg,
         cam_x_arg, cam_y_arg, cam_z_arg,
         cam_roll_arg, cam_pitch_arg, cam_yaw_arg,
         robot_ip_arg,
@@ -339,18 +414,9 @@ def generate_launch_description():
         torque_topic_arg,
         command_topic_arg,
         color_image_topic_arg,
+        #set_start_tolerance, # gives moveit more tolerance for arm joint position error
+        shutdown_on_sm_exit,
 
-
-        # 0. rosbridge          — turtlebot communication
-        # 1. navstack           - SLAM node that works with Turtlebot bridge
-        # 1.5 overhead webcam - v4l2_camera camera node publishing on /image_raw
-        #                        currently loaded separately from different comp
-        # 2. person_tracker      — camera, static TF, person tracker, top-down viz
-        # 3. arm.launch.py       — UR3e driver + virtual spring controller + torque relay 4. moveit              - UR3e moveit server
-        # 5. bph_pickmeup_node   — arm pick-and-place action server
-        # 6. color_picker_node   — overhead-camera colour-based object localisation
-        # 7. simple_sm_node      — top-level SMACH state machine
-        
 
         # start nodes / sub-launches
         LogInfo(msg="[demo] Starting ROSBridge ..."),
@@ -367,6 +433,7 @@ def generate_launch_description():
             actions=[nav_bringup],
         ),
 
+        navigator_node,
         
         LogInfo(msg="[demo] Check that v4l2_camera is loaded..."),
         #camera_bringup,
@@ -377,10 +444,11 @@ def generate_launch_description():
 
         LogInfo(msg="[demo] Starting UR3e arm + spring controller ..."),
         arm_bringup,
+        collision_scene_publisher,
+        LogInfo(msg="[demo] Starting UR3e MoveIt ..."),
+        moveit_bringup, 
 
-        # LogInfo(msg="[demo] Starting UR3e MoveIt ..."),
-         moveit_bringup, 
-
+        
         LogInfo(msg="[demo] Starting arm pick-and-place server ..."),
         pickmeup_node,
 
@@ -389,4 +457,8 @@ def generate_launch_description():
 
         LogInfo(msg="[demo] Starting SMACH state machine ..."),
         state_machine_node,
+
+        LogInfo(msg="[demo] Loading static transforms for camera and world to map..."),
+        arm_base_tf,
+        camera_tf,
     ])

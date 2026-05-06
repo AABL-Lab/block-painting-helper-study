@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name + '/launch', ['launch/demo.launch.py']),
         ('share/' + package_name + '/launch', ['launch/fakenavdemo.launch.py']),
         ('share/' + package_name + '/launch', ['launch/arm.launch.py']),
+        ('share/' + package_name + '/launch', ['launch/ur_moveit.launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

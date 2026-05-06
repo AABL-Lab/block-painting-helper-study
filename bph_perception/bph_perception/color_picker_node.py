@@ -389,19 +389,12 @@ class ColorPickerNode(Node):
         pt.point.z = Z
 
         try:
-            pt_map = self._tf_buffer.transform(
-                pt, "map", timeout=rclpy.duration.Duration(seconds=0.1),
+            pt_world = self._tf_buffer.transform(
+                pt, "world", timeout=rclpy.duration.Duration(seconds=0.1),
             )
         except:
-            self.get_logger().warn("TF2 to map failed, returning camera-frame pose")
-            # return the raw camera-frame point instead
-            fallback = PoseStamped()
-            fallback.header = pt.header   # frame_id = 'camera'
-            fallback.pose.position.x = pt.point.x
-            fallback.pose.position.y = pt.point.y
-            fallback.pose.position.z = pt.point.z
-            fallback.pose.orientation.w = 1.0
-            return fallback
+            self.get_logger().warn(f"TF2 to world failed: {e}")
+            return None  # caller will use pre_grasp fallback
 
         pose = PoseStamped()
         pose.header = pt_map.header

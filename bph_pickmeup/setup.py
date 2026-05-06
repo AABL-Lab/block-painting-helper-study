@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'bph_pickmeup_actionserver = bph_pickmeup.bph_pickmeup_action_server:main',
             'bph_pickmeup_client = bph_pickmeup.bph_pickmeup_client:main',
+            'bph_collision_scene = bph_pickmeup.publish_collision_scene:main',
         ],
     },
 )

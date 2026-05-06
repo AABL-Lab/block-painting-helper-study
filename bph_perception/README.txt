@@ -9,7 +9,15 @@ ros2 run bph_perception color_picker \
 Test with
 ros2 service call /color_picker/get_target_pose bph_interfaces/srv/GetTargetPose "{color: 'red'}"
 
-All launch options:
+View the image being provided to color picker with:
+ros2 run image_view image_view --ros-args -r image:=/bph_overhead_camera/image_raw
+
+View the results (only when called) with:
+ros2 run image_view image_view --ros-args -r image:=/color_picker_node/debug_image
+
+
+======================================
+All launch options (passed down from demo launch):
 ros2 launch bph_statemachine demo.launch.py \
   use_sim_time:=false \
   params_file:=<path_to_nav_to_goal>/config/nav2_params.yaml \

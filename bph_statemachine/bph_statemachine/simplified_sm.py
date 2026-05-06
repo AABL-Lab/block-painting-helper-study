@@ -56,9 +56,9 @@ class RobotFetchNode(Node):
     def __init__(self):
         super().__init__("robot_fetch_smach")
 
-        self.declare_parameter("home_x", -2.814
-        self.declare_parameter("home_y", -0.480)
-        self.declare_parameter("home_yaw", -1.974)
+        self.declare_parameter("home_x", 0.0)
+        self.declare_parameter("home_y", 0.0)
+        self.declare_parameter("home_yaw", 0.0)
         self.declare_parameter("supply_closet_x", 0.105)
         self.declare_parameter("supply_closet_y", -0.406)
         self.declare_parameter("supply_closet_yaw", 0.0)
@@ -146,12 +146,25 @@ class RobotFetchNode(Node):
                 transitions={"done": "WAIT"},
             )
 
+        # Create a publisher so we can check the state easily
+        self.state_pub = self.create_publisher(String, '/smach_state', 10)
+        self.create_timer(1.0, self._publish_state_cb)
+        self.sm = sm 
+
+            
         sis = smach_ros.IntrospectionServer("robot_fetch_smach", sm, "/SM_ROOT")
         sis.start()
         outcome = sm.execute()
         self.get_logger().info("State machine finished: %s" % outcome)
         sis.stop()
-
+        
+    def _publish_state_cb(self):
+        if not hasattr(self, 'sm'):
+            return
+        active = self.sm.get_active_states()
+        msg = String()
+        msg.data = str(active)
+        self.state_pub.publish(msg)
 
 # ---------------------------------------------------------------------------
 # _FetchState — base class with shared helpers
@@ -169,18 +182,21 @@ class _FetchState(smach.State):
         )
         self._node = node
 
-    def _call_service(self, client, request):
-        """Call a service safely while MultithreadedExecutor is running."""
+    def _call_service(self, client, request, timeout=10.0):
         event = threading.Event()
         result = [None]
-
         def cb(f):
-            result[0] = f.result()
+            try:
+                result[0] = f.result()
+            except Exception as e:
+                self._node.get_logger().error(f"Service call future exception: {e}")
             event.set()
-
         client.call_async(request).add_done_callback(cb)
-        event.wait()
+        event.wait(timeout=timeout)
+        if result[0] is None:
+            self._node.get_logger().error("Service call timed out!")
         return result[0]
+        
 
     def _wait_for_button(self):
         """Block until a String message arrives on /requestedmaterial from the UI; return its payload."""
@@ -224,15 +240,21 @@ class RetrievingObject(_FetchState):
         req = GoToLocation.Request()
         req.x, req.y, req.yaw = self._node.supply_closet_location
         resp = self._call_service(self._nav_client, req)
-        if resp and resp.accepted:
-            self._node.get_logger().info("[RetrievingObject] Arrived at supply closet")
-            return "at_supply_closet"
-        self._node.get_logger().warn(
-            "[RetrievingObject] Navigation failed: %s"
-            % (resp.message if resp else "no response")
+        if not (resp and resp.accepted):
+            return "nav_error"
+        
+        # Wait for actual completion via status topic
+        latch = _Latch()
+        sub = self._node.create_subscription(
+            String, '/navigation_status', latch.callback, 10
         )
+        status = latch.wait(timeout=120.0)
+        self._node.destroy_subscription(sub)
+        
+        if status and status.startswith('SUCCEEDED'):
+            return "at_supply_closet"
         return "nav_error"
-
+    
 
 # ---------------------------------------------------------------------------
 # State: WaitingForObject
@@ -262,17 +284,23 @@ class NavigatingHome(_FetchState):
         self._nav_client = node.create_client(GoToLocation, "navigate_to")
 
     def execute(self, userdata):
-        self._node.get_logger().info("[NavigatingHome] Navigating home...")
+        self._node.get_logger().info("[RetrievingObject] Navigating to HOME...")
         req = GoToLocation.Request()
         req.x, req.y, req.yaw = self._node.home_location
         resp = self._call_service(self._nav_client, req)
-        if resp and resp.accepted:
-            self._node.get_logger().info("[NavigatingHome] Arrived at home")
-            return "at_home"
-        self._node.get_logger().warn(
-            "[NavigatingHome] Navigation failed: %s"
-            % (resp.message if resp else "no response")
+        if not (resp and resp.accepted):
+            return "nav_error"
+        
+        # Wait for actual completion via status topic
+        latch = _Latch()
+        sub = self._node.create_subscription(
+            String, '/navigation_status', latch.callback, 10
         )
+        status = latch.wait(timeout=120.0)
+        self._node.destroy_subscription(sub)
+        
+        if status and status.startswith('SUCCEEDED'):
+            return "at_home"
         return "nav_error"
 
 

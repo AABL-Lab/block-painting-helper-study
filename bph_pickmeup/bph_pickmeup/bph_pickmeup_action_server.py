@@ -85,6 +85,10 @@ class BphPickmeupServer(Node):
         self._moveit_client.wait_for_server()
         self.get_logger().info("Connected to /move_action.")
 
+        self._execute_client = ActionClient(
+            self, ExecuteTrajectory, '/execute_trajectory'
+        )
+        
         # Our own action server
         self._action_server = ActionServer(
             self,
@@ -224,7 +228,7 @@ class BphPickmeupServer(Node):
         feedback.progress      = 0.6
         goal_handle.publish_feedback(feedback)
 
-        exec_future = self._moveit_client.send_goal_async(exec_goal)
+        exec_future = self._execute_client.send_goal_async(exec_goal)
         rclpy.spin_until_future_complete(self, exec_future)
         exec_handle = exec_future.result()
 

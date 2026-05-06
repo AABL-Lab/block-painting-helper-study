@@ -2,29 +2,28 @@
 """
 navigator_node.py
 -----------------
-Robot-agnostic Nav2 navigation node.
+Robot-agnostic Nav2 navigation node for the block-painting-helper demo.
 
-- Waits for SLAM (slam_toolbox) to produce a valid map
-- Waits for Nav2 (lifecycle nodes) to become active
-- Sends a single NavigateToPose goal
-- Reports progress via feedback and result callbacks
+Exposes:
+  /navigate_to  (bph_interfaces/srv/GoToLocation)
+      Accepts a goal (x, y, yaw) and immediately returns accepted=True once
+      the goal is sent to Nav2.  The caller should monitor /navigation_status
+      for the result.
 
-Configuration (ROS parameters, all overridable at launch):
+  /navigation_status  (std_msgs/String)
+      Publishes the outcome once Nav2 finishes:
+        SUCCEEDED:<x>,<y>   — goal reached
+        CANCELED             — goal was canceled
+        ABORTED              — Nav2 aborted the goal
+        STATUS_<n>           — unexpected status code
 
-  map_frame       (str,   default "map") : Fixed/map frame id
-  robot_base_frame(str,   default "base_link") : Robot base frame id
-  navigate_on_start (bool, default True) : Navigate immediately on startup
-
-Minimum external requirements
-  - slam_toolbox running in lifelong / online-async mode
-  - nav2_bringup stack running (bt_navigator, controller_server, etc.)
-  - A depth camera publishing sensor_msgs/Image (or PointCloud2) consumed
-    by a depth_image_proc / pointcloud_to_laserscan node whose output feeds
-    the costmap — no topic wiring is done here; that lives in the Nav2
-    parameter YAML (see config/nav2_params.yaml).
+Parameters:
+  map_frame        (str,   default "map")       Fixed/map frame id
+  robot_base_frame (str,   default "base_link") Robot base frame id
 """
+
 import math
-import time
+import threading
 
 import rclpy
 from rclpy.action import ActionClient
@@ -35,10 +34,9 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
-from lifecycle_msgs.srv import GetState
-from bph_interfaces.srv import GoToLocation
 from std_msgs.msg import String
 
+from bph_interfaces.srv import GoToLocation
 
 
 def yaw_to_quaternion(yaw: float) -> Quaternion:
@@ -52,38 +50,30 @@ def yaw_to_quaternion(yaw: float) -> Quaternion:
 
 
 class NavigatorNode(Node):
-    """Sends a NavigateToPose goal once SLAM and Nav2 are ready."""
-
-    # Nav2 lifecycle nodes that must be 'active' before we send a goal
-    NAV2_NODES = [
-        "bt_navigator",
-        "controller_server",
-        "planner_server",
-        "recoveries_server",  # nav2_recoveries (Humble+)
-    ]
 
     def __init__(self):
         super().__init__("navigator_node")
-        self._srv = self.create_service(GoToLocation, 'navigate_to', self._navigate_callback)
 
         # ── Parameters ────────────────────────────────────────────────────────
-        self.declare_parameter("map_frame", "map")
-        self.declare_parameter("robot_base_frame", "base_link")
-        
-        self._map_frame = self.get_parameter("map_frame").value
-        self._robot_base_frame = self.get_parameter("robot_base_frame").value
+        self.declare_parameter("map_frame",         "map")
+        self.declare_parameter("robot_base_frame",  "base_link")
 
-        # ── State flags ───────────────────────────────────────────────────────
+        self._map_frame          = self.get_parameter("map_frame").value
+        self._robot_base_frame   = self.get_parameter("robot_base_frame").value
+
+        # ── State ─────────────────────────────────────────────────────────────
         self._map_received = False
-        self._nav2_ready = False
-        self._goal_sent = False
-        self._status_pub = self.create_publisher(String, '/navigation_status', 10)
+        self._goal_x       = 0.0
+        self._goal_y       = 0.0
+        self._goal_yaw     = 0.0
 
+        # ── Publishers ────────────────────────────────────────────────────────
+        self._status_pub = self.create_publisher(String, "/navigation_status", 10)
 
         # ── Action client ─────────────────────────────────────────────────────
         self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
-        # ── Map subscriber (latched-style QoS to catch maps published before
+        # ── Map subscriber (transient-local to catch maps published before
         #    this node starts) ─────────────────────────────────────────────────
         map_qos = QoSProfile(
             depth=1,
@@ -91,114 +81,108 @@ class NavigatorNode(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
         )
         self._map_sub = self.create_subscription(
-            OccupancyGrid, "map", self._map_callback, map_qos
+            OccupancyGrid, "map", self._map_callback, map_qos,
         )
 
-        # ── Periodic readiness check ──────────────────────────────────────────
-        self._check_timer = self.create_timer(2.0, self._check_ready)
-
-        self.get_logger().info(
-            f"NavigatorNode started. Goal: ({self._goal_x}, {self._goal_y}, "
-            f"yaw={self._goal_yaw:.2f} rad) in frame '{self._map_frame}'"
+        # ── Service ───────────────────────────────────────────────────────────
+        self._srv = self.create_service(
+            GoToLocation, "navigate_to", self._navigate_callback,
         )
+
+        self.get_logger().info("NavigatorNode started. Waiting for service calls.")
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
 
-    def _map_callback(self, msg: OccupancyGrid):
+    def _map_callback(self, msg: OccupancyGrid) -> None:
         if not self._map_received:
-            w, h = msg.info.width, msg.info.height
-            self.get_logger().info(f"Map received ({w}×{h} cells).")
+            self.get_logger().info(
+                f"Map received ({msg.info.width}×{msg.info.height} cells)."
+            )
             self._map_received = True
-            self._map_sub  # keep alive — unsubscribe if memory matters
 
-    def _check_ready(self):
-        """Poll Nav2 lifecycle nodes; send goal once everything is ready."""
-        if self._goal_sent:
-            self._check_timer.cancel()
-            return
+    def _navigate_callback(
+        self, request: GoToLocation.Request, response: GoToLocation.Response
+    ) -> GoToLocation.Response:
+        try:
+            self.get_logger().info(
+                f"[navigate_cb] received request "
+                f"x={request.x} y={request.y} yaw={request.yaw}"
+            )
+            self.get_logger().info(
+                f"[navigate_cb] map_received={self._map_received}, "
+                f"nav_client_ready={self._nav_client.server_is_ready()}"
+            )
 
-        if not self._map_received:
-            self.get_logger().info("Waiting for SLAM map …", throttle_duration_sec=5.0)
-            return
+            if not self._map_received:
+                response.accepted = False
+                response.message  = "No map received yet"
+                return response
 
-        if not self._nav2_ready:
-            self._nav2_ready = self._all_nav2_nodes_active()
-            if not self._nav2_ready:
-                return
+            if not self._nav_client.server_is_ready():
+                response.accepted = False
+                response.message  = "Nav2 action server not ready"
+                return response
 
-        if self._navigate_on_start:
+            self._goal_x   = request.x
+            self._goal_y   = request.y
+            self._goal_yaw = request.yaw
             self._send_goal()
 
-    def _all_nav2_nodes_active(self) -> bool:
-        """Return True only if every monitored Nav2 node reports 'active'."""
-        for node_name in self.NAV2_NODES:
-            srv = self.create_client(GetState, f"{node_name}/get_state")
-            if not srv.wait_for_service(timeout_sec=0.2):
-                self.get_logger().info(
-                    f"Nav2 node '{node_name}' not yet available …",
-                    throttle_duration_sec=5.0,
-                )
-                return False
-            future = srv.call_async(GetState.Request())
-            rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
-            if future.result() is None:
-                return False
-            state = future.result().current_state.label
-            if state != "active":
-                self.get_logger().info(
-                    f"Nav2 node '{node_name}' is '{state}' (need 'active') …",
-                    throttle_duration_sec=5.0,
-                )
-                return False
-        self.get_logger().info("All Nav2 nodes are active ✓")
-        return True
+            response.accepted = True
+            response.message  = f"Goal sent to ({request.x:.2f}, {request.y:.2f})"
+            return response
+
+        except Exception as e:
+            self.get_logger().error(f"[navigate_cb] EXCEPTION: {e}")
+            response.accepted = False
+            response.message  = f"Exception: {e}"
+            return response
 
     # ── Goal sending ──────────────────────────────────────────────────────────
 
-    def _navigate_callback(self, request, response):
-        if not self._map_received:
-            response.accepted = False
-            response.message = "No map yet"
-            return response
-        if not self._nav2_ready:
-            self._nav2_ready = self._all_nav2_nodes_active()
-            if not self._nav2_ready:
-                response.accepted = False
-                response.message = "Nav2 not ready"
-                return response
+    def _send_goal(self) -> None:
+        goal = NavigateToPose.Goal()
+        goal.pose                        = PoseStamped()
+        goal.pose.header.frame_id        = self._map_frame
+        goal.pose.header.stamp           = self.get_clock().now().to_msg()
+        goal.pose.pose.position.x        = self._goal_x
+        goal.pose.pose.position.y        = self._goal_y
+        goal.pose.pose.position.z        = 0.0
+        goal.pose.pose.orientation       = yaw_to_quaternion(self._goal_yaw)
 
-        self._goal_x = request.x
-        self._goal_y = request.y
-        self._goal_yaw = request.yaw
-        self._send_goal()
-        response.accepted = True
-        response.message = f"Goal sent to ({request.x}, {request.y})"
-        return response
+        self.get_logger().info(
+            f"Sending goal to Nav2: "
+            f"({self._goal_x:.2f}, {self._goal_y:.2f}, yaw={self._goal_yaw:.2f})"
+        )
+        future = self._nav_client.send_goal_async(
+            goal, feedback_callback=self._feedback_callback,
+        )
+        future.add_done_callback(self._goal_response_callback)
 
-    def _goal_response_callback(self, future):
+    def _goal_response_callback(self, future) -> None:
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error("Goal was REJECTED by Nav2.")
+            msg = String()
+            msg.data = "ABORTED"
+            self._status_pub.publish(msg)
             return
-        self.get_logger().info("Goal ACCEPTED — robot is navigating …")
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._result_callback)
+        self.get_logger().info("Goal ACCEPTED — robot is navigating...")
+        goal_handle.get_result_async().add_done_callback(self._result_callback)
 
-    def _feedback_callback(self, feedback_msg):
-        fb = feedback_msg.feedback
-        dist = fb.distance_remaining
+    def _feedback_callback(self, feedback_msg) -> None:
+        dist = feedback_msg.feedback.distance_remaining
         self.get_logger().info(
             f"[Nav2 feedback] Distance remaining: {dist:.2f} m",
             throttle_duration_sec=2.0,
         )
 
-    def _result_callback(self, future):
-        result = future.result()
-        status = result.status
-        msg = String()
+    def _result_callback(self, future) -> None:
+        status = future.result().status
+        msg    = String()
 
         if status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info("🎉 Goal REACHED successfully!")
+            self.get_logger().info("Goal REACHED successfully!")
             msg.data = f"SUCCEEDED:{self._goal_x},{self._goal_y}"
         elif status == GoalStatus.STATUS_CANCELED:
             self.get_logger().warn("Goal was CANCELED.")
@@ -209,6 +193,7 @@ class NavigatorNode(Node):
         else:
             self.get_logger().warn(f"Goal ended with status code: {status}")
             msg.data = f"STATUS_{status}"
+
         self._status_pub.publish(msg)
 
 

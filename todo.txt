@@ -1,4 +1,33 @@
- ros2 launch nav2_bringup navigation_launch.py   use_sim_time:=false   params_file:=/home/katallen/sandbox/src/block-painting-helper/hayley-nav2/nav2_params.yaml
+May 6
+- (low) figure out why Nav2 is getting stuck
+- figure out if world to map is off by180deg
+- maybe change fallback behavior for nav failing to be advancing the state machine?
+
+- spring definitions not set in config_path or config_path not there?
+  should have workspace spring from end effector
+
+
+
+Done
+- check z height of camera and turtlebot and fix in demo.launch
+- check that TF has a connection between the arm base and world
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ros2 launch nav2_bringup navigation_launch.py   use_sim_time:=false   params_file:=/home/katallen/sandbox/src/block-painting-helper/hayley-nav2/nav2_params.yaml
 
 ros2 run nav_to_goal turtlebot_bridge 
 
