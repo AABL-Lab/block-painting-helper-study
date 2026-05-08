@@ -118,7 +118,9 @@ def generate_launch_description():
         description="Whether to launch RViz alongside the UR driver.",
     )
 
-
+    moveit_params_file = PathJoinSubstitution([
+            EnvironmentVariable("ROS_WS", default_value="/home/katallen/sandbox"),
+            "src/block-painting-helper/config/moveit_params.yaml"])
 
     urdf_path_arg = DeclareLaunchArgument(
         "urdf_path",
@@ -143,6 +145,15 @@ def generate_launch_description():
     ]),
         description="Parameter file for nav2",
         )
+
+    map_file_arg = DeclareLaunchArgument(
+        "map_file",
+        default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS",
+        default_value="/home/katallen/sandbox"),
+        "src/block-painting-helper/maps/kat_lab_map.yaml"]),
+        description="map file for Nav2",
+        )
+    
     springconfig_arg = DeclareLaunchArgument(
         "springconfig",
         default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS", default_value="/home/katallen/sandbox"),
@@ -189,29 +200,24 @@ def generate_launch_description():
         package="nav_to_goal",
         executable="turtlebot_bridge",
         name="turtle_bridge",
+        remappings=[
+        ('/joint_states', '/turtlebot/joint_states'),
+        ],
         output="screen",
     )
 
     # ── 1. Nav2   ──────────────────────────────────────
     nav_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(nav2_pkg, "launch", "navigation_launch.py")
+            os.path.join(nav2_pkg, "launch", "bringup_launch.py")
         ),
         launch_arguments={
             "use_sim_time":      use_sim_time,
             "params_file":       LaunchConfiguration("params_file"),
+            "map":               LaunchConfiguration("map_file"),
         }.items(),
     )
-    localization_bringup = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(nav2_pkg, "launch", "localization_launch.py")
-    ),
-        launch_arguments={
-            "use_sim_time":  use_sim_time,
-            "params_file":   LaunchConfiguration("params_file"),
-            "map":           "/home/katallen/maps/my_map.yaml",
-        }.items(),
-    )
+
 
     # ── 4. Navigator goal node ─────────────────────────────────────────────
     navigator_node = Node(
@@ -373,8 +379,8 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='arm_base_to_map_tf',
         arguments=[
-            '-0.2176', '-0.665', '0.936',  # x, y, z in map frame
-            '-1.57', '0.0', '0.0',         # yaw, pitch, roll
+            '0.2176', '0.665', '0.936',  # x, y, z in map frame
+            '0.0', '0.0', '0.0',         # yaw, pitch, roll
             'map', 'world'
         ]
     )
@@ -390,6 +396,14 @@ def generate_launch_description():
             'bph_overhead_camera_optical_frame'  # must match camera_info frame_id
         ]
     )
+
+    initial_pose = ExecuteProcess(
+        cmd=['ros2', 'topic', 'pub', '--once', '/initialpose',
+             'geometry_msgs/msg/PoseWithCovarianceStamped',
+             '{"header": {"frame_id": "map"}, "pose": {"pose": {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "orientation": {"w": 1.0}}, "covariance": [0.25,0,0,0,0,0,0,0.25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.07]}}'],
+        output='screen',
+    )
+
     
     return LaunchDescription([
         set_pythonpath,             # must come first
@@ -398,6 +412,7 @@ def generate_launch_description():
         use_sim_time_arg,
         params_file_arg,
         slam_params_file_arg,
+        map_file_arg,
         depth_image_topic_arg,
         depth_info_topic_arg,
         robot_base_frame_arg,
@@ -423,16 +438,13 @@ def generate_launch_description():
         turtlebridge_bringup,
 
         LogInfo(msg="[demo] Starting Nav2 + localization ..."),
-        TimerAction(
-            period=5.0,
-            actions=[localization_bringup],
-            ),
         
         TimerAction(
             period=5.0,
             actions=[nav_bringup],
         ),
 
+        TimerAction(period=15.0, actions=[initial_pose]),
         navigator_node,
         
         LogInfo(msg="[demo] Check that v4l2_camera is loaded..."),

@@ -3,10 +3,11 @@ A ros2 multimodal system for helping the user paint on wooden blocks or do other
 
 Includes ros packages:
 - bph_pickmeup:  a MoveIt package for picking up an object and moving it into the user's workspace
-- person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm
+- (not working) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm
 - nav_to_goal: a Nav2 node for moving around the room avoiding obstacles to retrieve the desired object 
 - bph_statemachine: a SMACH package for high-level control of the system and triggering the other nodes
-- 
+- bph_userinterface: a simple webserver for sending material requests or resolving navigation errors
+
 
 Not included in this repository but used here:
 - springcontroller: a platform-independent ROS node for torque control of a robot arm using virtual springs for constraints on the arm's position in the user's workspace
@@ -39,28 +40,40 @@ In this repository but not run here:
   (this allows ROS to use the venv)
   (This also goes in the launch file, but is needed for debug)
 
-# Running details
-  ssh into the Turtlebot laptop FROM THE MAIN ROS MACHINE:
-  cd into wherever you copied the bringup script and run:
-  ros2 launch turtlebot_bringup.launch.py
+######################RUNNING THE FULL STACK ##################
 
-On your machine local to the camera:
-ros2 run v4l2_camera v4l2_camera_node  --ros-args -r image_raw:=/bph_overhead_camera/image_raw -r video_device:='/dev/video0'
+This demo runs on 2-3 computers, I ran it on one attached to the
+camera, one laptop mounted on the turtlebot, and one machine running
+the demo and webserver.  Make sure they all have the same
+$ROS_DOMAIN_ID, that
+$CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>200</MaxAutoParticipantIndex><EnableTopicDiscoveryEndpoints>false</EnableTopicDiscoveryEndpoints></Discovery></Domain></CycloneDDS>'
+and that $ROS_AUTOMATIC_DISCOVERY_RANGE is set to allow them to talk
+to each other (I used subnet)
+
+TURTLEBOT SETUP:
+  ssh into the Turtlebot laptop from the machine
+  that will be running the demo.launch script:
+ - cd into wherever you copied the bringup script and run:
+       ros2 launch turtlebot_bringup.launch.py
+
+CAMERA SETUP:
+  On your machine local to the camera:
+    ros2 run v4l2_camera v4l2_camera_node  --ros-args -r image_raw:=/bph_overhead_camera/image_raw -r video_device:='/dev/video0'
 
 On your static computer:
-To enable rosbridge safely across the local network:
-source ~/.ros_venv/bin/activate
-ssh -L 9090:localhost:9090 baymax@10.5.10.74 (check this IP)
+   To enable rosbridge safely across the local network:
+   source ~/.ros_venv/bin/activate
+   ssh -L 9090:localhost:9090 baymax@10.5.10.74 (check this IP)
 
 Everything else robot:
-source ~/.ros_venv/bin/activate
-ros2 launch bph_statemachine demo.launch.py
+   source ~/.ros_venv/bin/activate
+   ros2 launch bph_statemachine demo.launch.py
 
 User interface:
- ros2 run rosbridge_server rosbridge_websocket --ros-args -p port:=9405 -p "qos_overrides./button.subscription.durability:=volatile" -p "qos_overrides./requestedmaterial.subscription.durability:=volatile" 
+   ros2 run rosbridge_server rosbridge_websocket --ros-args -p port:=9405 -p "qos_overrides./button.subscription.durability:=volatile" -p "qos_overrides./requestedmaterial.subscription.durability:=volatile" 
 
 second terminal:
-python3 /home/katallen/sandbox/src/block-painting-helper/bph_userinterface/bph_ui_server.py 
+  python3 /home/katallen/sandbox/src/block-painting-helper/bph_userinterface/bph_ui_server.py 
 
 
 STATUS:
@@ -68,32 +81,4 @@ STATUS:
 - 30 March 2026:  MoveIt and NavStack assignment b7e4767
 - 6 March 2026:  Perception Assignment 19c79af (including venv instructions)
 - 22 April 2026: SMACH assignment 9d1622c
-
-
-Full launch:
-ros2 launch bph_statemachine demo.launch.py \
-  use_sim_time:=false \
-  params_file:=<path_to_nav_to_goal>/config/nav2_params.yaml \
-  slam_params_file:=<path_to_nav_to_goal>/config/slam_params.yaml \
-  depth_image_topic:=/camera/depth/image_raw \
-  depth_info_topic:=/camera/depth/camera_info \
-  robot_base_frame:=base_link \
-  cam_x:=0.0 \
-  cam_y:=0.0 \
-  cam_z:=2.5 \
-  cam_roll:=0.0 \
-  cam_pitch:=1.5707963 \
-  cam_yaw:=0.0 \
-  robot_ip:=10.3.4.10 \
-  launch_rviz:=false \
-  urdf_path:=/home/katallen/workspace/src/springcontroller/springcontroller/flat_urdf_files/ceeorobot_flat.urdf \
-  joint_order:=[elbow_joint,shoulder_lift_joint,shoulder_pan_joint,wrist_1_joint,wrist_2_joint,wrist_3_joint] \
-  torque_topic:=/virtual_spring_node/joint_torques \
-  command_topic:=/forward_effort_controller/commands \
-  color_image_topic:=/bph_overhead_camera/image_raw \
-  cam_info_topic:=/bph_overhead_camera/camera_info \
-  target_color:=red \
-  object_height_m:=0.0 \
-  min_contour_area:=500 \
-  detection_rate_hz:=10.0
 

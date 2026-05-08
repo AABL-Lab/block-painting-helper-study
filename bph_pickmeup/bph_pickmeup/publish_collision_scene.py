@@ -43,10 +43,10 @@ class CollisionScenePublisher(Node):
         box.dimensions = [1.22, 0.6, 0.03]
         
         pose = Pose()
-        pose.position.x = -0.1
-        pose.position.y = -0.1
+        pose.position.x = 0.1
+        pose.position.y = 0.1
         pose.position.z = -0.215
-        pose.orientation.w = 1.0
+        pose.orientation.w = -1.0
         
         table.primitives = [box]
         table.primitive_poses = [pose]

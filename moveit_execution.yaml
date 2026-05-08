@@ -1,0 +1,3 @@
+trajectory_execution:
+  allowed_start_tolerance: 0.05
+  execution_duration_monitoring: false

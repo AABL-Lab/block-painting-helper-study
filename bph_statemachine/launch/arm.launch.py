@@ -1,10 +1,15 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.substitutions import EnvironmentVariable, PathJoinSubstitution
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    LogInfo,
+    SetEnvironmentVariable,
+)
 
 def generate_launch_description():
 
@@ -27,14 +32,15 @@ def generate_launch_description():
 
     use_fake_hardware_arg = DeclareLaunchArgument(
     "use_fake_hardware",
-    default_value="true",
+    default_value="false",
     description="Use fake hardware for UR arm",
 )
 
     # --- virtual_spring_node ---
     urdf_path_arg = DeclareLaunchArgument(
         "urdf_path",
-        default_value="/home/katallen/workspace/src/springcontroller/springcontroller/flat_urdf_files/ceeorobot_flat.urdf",
+        default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS",
+        default_value="/home/katallen/sandbox"), "src/springcontroller/springcontroller/flat_urdf_files/ceeorobot_flat.urdf"]),
         description="Absolute path to the URDF file used by the virtual spring node.",
     )
 
@@ -63,7 +69,14 @@ def generate_launch_description():
         description="Kinematics Calibration file made from ros2 launch ur_calibration calibration_correction.launch.py",
         )
         
-    
+
+    springconfig_arg = DeclareLaunchArgument(
+        "springconfig",
+        default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS",
+        default_value="/home/katallen/sandbox"),
+        "src/springcontroller/springcontroller/config/demosprings.yaml"]),
+    )
+
     # ---------------------------------------------------------------------------
     # UR3e robot driver (included launch file)
     # ---------------------------------------------------------------------------
@@ -93,8 +106,9 @@ def generate_launch_description():
         output="screen",
         emulate_tty=True,
         parameters=[
-            {"urdf_path": LaunchConfiguration("urdf_path")}
-        ],
+            {"urdf_path": LaunchConfiguration("urdf_path"),
+             "config_path": LaunchConfiguration("springconfig"),
+             }],
     )
 
     # ---------------------------------------------------------------------------
@@ -127,8 +141,9 @@ def generate_launch_description():
         torque_topic_arg,
         command_topic_arg,
         kinematics_params,
-        # nodes / included launches
         use_fake_hardware_arg,
+        springconfig_arg,
+        # nodes / included launches
         ur_driver,
         virtual_spring_node,
         torque_relay,
