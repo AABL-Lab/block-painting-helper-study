@@ -26,7 +26,7 @@ import smach_ros
 from controller_manager_msgs.srv import SwitchController
 from bph_interfaces.srv import GoToLocation, GetTargetPose, MoveToPose
 from bph_pickmeup.bph_pickmeup_client import BphPickmeupClient
-
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 # ---------------------------------------------------------------------------
 # _Latch — thread-safe single-message capture
@@ -70,6 +70,7 @@ class RobotFetchNode(Node):
         )
         self.get_logger().info("RobotFetchNode initialised")
 
+        self._nav_recovery_pub = self.create_publisher(String, '/nav_recovery_prompt', 10)
     @property
     def home_location(self):
         return (
@@ -182,6 +183,75 @@ class _FetchState(smach.State):
         )
         self._node = node
 
+    # Add this method to _FetchState
+    def _prompt_nav_recovery(self, destination_name: str) -> str:
+        """
+        Publish a recovery prompt and block until the user responds.
+        
+        Listens on two topics simultaneously — whichever fires first wins:
+        /nav_recovery_choice  (std_msgs/String)
+            'retry'  — call Nav2 again from scratch
+            'skip'   — proceed as if navigation succeeded
+            'abort'  — fall back to WAIT state
+        /initialpose  (geometry_msgs/PoseWithCovarianceStamped)
+            RViz "2D Pose Estimate" button — AMCL relocalization,
+            then automatically retries navigation.
+        
+        Returns 'retry', 'skip', or 'abort'.
+        """
+        # Tell the web UI which destination failed
+        prompt_msg = String()
+        prompt_msg.data = f"nav_failed:{destination_name}"
+        self._node._nav_recovery_pub.publish(prompt_msg)
+        
+        # Mirror options in the terminal
+        self._node.get_logger().warn(
+            f"\n{'='*60}\n"
+            f"[Nav Recovery] Navigation to '{destination_name}' failed.\n"
+            "Options:\n"
+            "  ros2 topic pub --once /nav_recovery_choice std_msgs/String \"data: 'retry'\"\n"
+            "      → Try Nav2 again\n"
+            "  ros2 topic pub --once /nav_recovery_choice std_msgs/String \"data: 'skip'\"\n"
+            "      → Proceed as if robot arrived (useful if it's close enough)\n"
+            "  ros2 topic pub --once /nav_recovery_choice std_msgs/String \"data: 'abort'\"\n"
+            "      → Return to Wait state\n"
+            "  OR click '2D Pose Estimate' in RViz to relocalize → auto-retry\n"
+            f"{'='*60}"
+        )
+
+        result: list[str | None] = [None]
+        done = threading.Event()
+        subs = []
+
+        def on_choice(msg: String):
+            choice = msg.data.strip().lower()
+            if choice in ("retry", "skip", "abort") and not done.is_set():
+                self._node.get_logger().info(f"[Nav Recovery] /nav_recovery_choice: '{choice}'")
+                result[0] = choice
+                done.set()
+                
+        def on_initialpose(msg: PoseWithCovarianceStamped):
+            if not done.is_set():
+                self._node.get_logger().info(
+                    "[Nav Recovery] /initialpose received — AMCL updated, will retry navigation..."
+                )
+                result[0] = "retry"
+                done.set()
+                
+        subs.append(self._node.create_subscription(
+            String, "/nav_recovery_choice", on_choice, 10
+        ))
+        subs.append(self._node.create_subscription(
+            PoseWithCovarianceStamped, "/initialpose", on_initialpose, 10
+        ))
+        
+        done.wait()  # block until either subscription fires
+    
+        for sub in subs:
+            self._node.destroy_subscription(sub)
+
+        return result[0]
+        
     def _call_service(self, client, request, timeout=10.0):
         event = threading.Event()
         result = [None]
@@ -235,25 +305,35 @@ class RetrievingObject(_FetchState):
         super().__init__(node, outcomes=["at_supply_closet", "nav_error"])
         self._nav_client = node.create_client(GoToLocation, "navigate_to")
 
+      
     def execute(self, userdata):
-        self._node.get_logger().info("[RetrievingObject] Navigating to supply closet...")
-        req = GoToLocation.Request()
-        req.x, req.y, req.yaw = self._node.supply_closet_location
-        resp = self._call_service(self._nav_client, req)
-        if not (resp and resp.accepted):
-            return "nav_error"
-        
-        # Wait for actual completion via status topic
-        latch = _Latch()
-        sub = self._node.create_subscription(
-            String, '/navigation_status', latch.callback, 10
-        )
-        status = latch.wait(timeout=120.0)
-        self._node.destroy_subscription(sub)
-        
-        if status and status.startswith('SUCCEEDED'):
-            return "at_supply_closet"
-        return "nav_error"
+        while True:
+            self._node.get_logger().info("[RetrievingObject] Navigating to supply closet...")
+            req = GoToLocation.Request()
+            req.x, req.y, req.yaw = self._node.supply_closet_location
+            resp = self._call_service(self._nav_client, req)
+            
+            if not (resp and resp.accepted):
+                # Service rejected immediately (Nav2 not ready, bad goal, etc.)
+                choice = self._prompt_nav_recovery("supply_closet")
+                if choice == "retry":
+                    continue
+                return "at_supply_closet" if choice == "skip" else "nav_error"
+            
+            # Wait for Nav2 to actually finish
+            latch = _Latch()
+            sub = self._node.create_subscription(String, "/navigation_status", latch.callback, 10)
+            status = latch.wait(timeout=120.0)
+            self._node.destroy_subscription(sub)
+            
+            if status and status.startswith("SUCCEEDED"):
+                return "at_supply_closet"
+
+            # Nav2 accepted but then failed mid-route
+            choice = self._prompt_nav_recovery("supply_closet")
+            if choice == "retry":
+                continue
+            return "at_supply_closet" if choice == "skip" else "nav_error"
     
 
 # ---------------------------------------------------------------------------
@@ -283,27 +363,33 @@ class NavigatingHome(_FetchState):
         super().__init__(node, outcomes=["at_home", "nav_error"])
         self._nav_client = node.create_client(GoToLocation, "navigate_to")
 
+
     def execute(self, userdata):
-        self._node.get_logger().info("[RetrievingObject] Navigating to HOME...")
-        req = GoToLocation.Request()
-        req.x, req.y, req.yaw = self._node.home_location
-        resp = self._call_service(self._nav_client, req)
-        if not (resp and resp.accepted):
-            return "nav_error"
-        
-        # Wait for actual completion via status topic
-        latch = _Latch()
-        sub = self._node.create_subscription(
-            String, '/navigation_status', latch.callback, 10
-        )
-        status = latch.wait(timeout=120.0)
-        self._node.destroy_subscription(sub)
-        
-        if status and status.startswith('SUCCEEDED'):
-            return "at_home"
-        return "nav_error"
+        while True:
+            self._node.get_logger().info("[NavigatingHome] Navigating to home...")
+            req = GoToLocation.Request()
+            req.x, req.y, req.yaw = self._node.home_location
+            resp = self._call_service(self._nav_client, req)
+            
+            if not (resp and resp.accepted):
+                choice = self._prompt_nav_recovery("home")
+                if choice == "retry":
+                    continue
+                return "at_home" if choice == "skip" else "nav_error"
+            
+            latch = _Latch()
+            sub = self._node.create_subscription(String, "/navigation_status", latch.callback, 10)
+            status = latch.wait(timeout=120.0)
+            self._node.destroy_subscription(sub)
+            
+            if status and status.startswith("SUCCEEDED"):
+                return "at_home"
 
-
+            choice = self._prompt_nav_recovery("home")
+            if choice == "retry":
+                continue
+            return "at_home" if choice == "skip" else "nav_error"
+        
 # ---------------------------------------------------------------------------
 # State: LocatingObjectAndPeople
 # ---------------------------------------------------------------------------
