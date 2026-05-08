@@ -2,15 +2,18 @@
 A ros2 multimodal system for helping the user paint on wooden blocks or do other close-quarters manipulation tasks where an extra hand would be useful
 
 Includes ros packages:
-- bph_pickmeup:  a MoveIt package for picking up an object and moving it into the user's workspace
-- (not connected to the demo) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm
-- nav_to_goal: a Nav2 node for moving around the room avoiding obstacles to retrieve the desired object 
-- bph_statemachine: a SMACH package for high-level control of the system and triggering the other nodes
-- bph_userinterface: a simple webserver for sending material requests or resolving navigation errors
+- bph_interfaces: custom messages and actions (AI status: handwritten)
+- bph_pickmeup:  a MoveIt package for picking up an object and moving it into the user's workspace (AI status: original code handwritten based on examples, modifications to make into a service with interactive help from Claude)
+- nav_to_goal: a Nav2 node for moving around the room avoiding obstacles to retrieve the desired object (AI status: heavily debugged with Claude)
+- bph_statemachine: a SMACH package for high-level control of the system and triggering the other nodes (AI status: initial scaffold structure created by Claude, hand-edited to add state behavior, Claude-added failure state integration with the UI)
+- bph_userinterface: a simple webserver for sending material requests or resolving navigation errors (AI status: Claude-generated to a specification)
+
+- (not connected to the demo) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm (AI status: Claude-generated)
+
 
 
 Not included in this repository but used here:
-- springcontroller: a platform-independent ROS node for torque control of a robot arm using virtual springs for constraints on the arm's position in the user's workspace
+- springcontroller: a platform-independent ROS node for torque control of a robot arm using virtual springs for constraints on the arm's position in the user's workspace (AI status: Collaboratively generated with Claude for research, hand-edited, collaboratively debugged with Claude to add max torque generation)
 https://github.com/katallen405/springcontroller
 
 In this repository but not run here:
@@ -24,6 +27,8 @@ In this repository but not run here:
 
 
 # Installation details:
+Clone both this package and SpringController to your workspace.
+
   to run the person_tracker node and rosbridge, you need a virtual environment (venv) created with --system-site-packages
   python3 -m venv --system-site-packages ~/.ros_venv
   source ~/.ros_venv/bin/activate

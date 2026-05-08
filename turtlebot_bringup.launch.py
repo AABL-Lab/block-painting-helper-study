@@ -11,8 +11,6 @@ import os
 
 def generate_launch_description():
 
-    # ── External launch files ──────────────────────────────────────────────
-
     kobuki_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -43,8 +41,6 @@ def generate_launch_description():
         )
     )
 
-    # ── Static transforms ──────────────────────────────────────────────────
-
     # base_footprint → openni_depth_optical_frame
     depth_tf = Node(
         package="tf2_ros",
@@ -63,8 +59,6 @@ def generate_launch_description():
                    "base_footprint", "openni_rgb_optical_frame"],
     )
 
-    # ── depthimage_to_laserscan ────────────────────────────────────────────
-
     depth_to_scan = Node(
         package="depthimage_to_laserscan",
         executable="depthimage_to_laserscan_node",
@@ -82,7 +76,6 @@ def generate_launch_description():
         }],
     )
 
-    # ── Assemble ───────────────────────────────────────────────────────────
 
     return LaunchDescription([
         kobuki_launch,

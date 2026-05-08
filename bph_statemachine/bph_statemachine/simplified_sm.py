@@ -183,7 +183,7 @@ class _FetchState(smach.State):
         )
         self._node = node
 
-    # Add this method to _FetchState
+
     def _prompt_nav_recovery(self, destination_name: str) -> str:
         """
         Publish a recovery prompt and block until the user responds.
