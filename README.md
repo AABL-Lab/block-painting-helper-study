@@ -3,7 +3,7 @@ A ros2 multimodal system for helping the user paint on wooden blocks or do other
 
 Includes ros packages:
 - bph_pickmeup:  a MoveIt package for picking up an object and moving it into the user's workspace
-- (not working) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm
+- (not connected to the demo) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm
 - nav_to_goal: a Nav2 node for moving around the room avoiding obstacles to retrieve the desired object 
 - bph_statemachine: a SMACH package for high-level control of the system and triggering the other nodes
 - bph_userinterface: a simple webserver for sending material requests or resolving navigation errors
