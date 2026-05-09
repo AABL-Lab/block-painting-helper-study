@@ -1,4 +1,4 @@
-image: kat_lab_map.pgm
+image: kat_lab_map.yaml.pgm
 mode: trinary
 resolution: 0.050
 origin: [-4.995, -8.651, 0]

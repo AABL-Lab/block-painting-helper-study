@@ -404,6 +404,26 @@ def generate_launch_description():
         output='screen',
     )
 
+#################User Interface ##############
+
+    UI_rosbridge = Node(
+        package='rosbridge_server',
+        executable='rosbridge_websocket',
+        name='UI_rosbridge_websocket',
+        parameters=[{
+            "port": 9405,
+            "qos_overrides./button.subscription.durability":"volatile",
+            "qos_overrides./requestedmaterial.subscription.durability":"volatile"}
+                    ]
+    )
+
+    UI_server =  ExecuteProcess(
+            cmd=['python3', '/home/katallen/sandbox/src/block-painting-helper/bph_userinterface/bph_ui_server.py'],
+            output='screen',
+            cwd='/home/katallen/sandbox/src/block-painting-helper/',  # if it needs relative paths
+        )
+    
+    
     
     return LaunchDescription([
         set_pythonpath,             # must come first
@@ -473,4 +493,6 @@ def generate_launch_description():
         LogInfo(msg="[demo] Loading static transforms for camera and world to map..."),
         arm_base_tf,
         camera_tf,
+        UI_rosbridge,
+        UI_server,
     ])

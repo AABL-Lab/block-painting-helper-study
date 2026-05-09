@@ -3,295 +3,455 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Block Request Display</title>
+<title>Block Painting Helper</title>
 <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #f0f0ee; display: flex; flex-direction: column; min-height: 100vh; }
 
-body {
-  font-family: system-ui, sans-serif;
-  background: #f0f0ee;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  transition: background 0.5s;
+/* ── Connection bar ── */
+.conn-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; background: #fff; border-bottom: 1px solid #e0e0e0; flex-wrap: wrap;
 }
-
-/* ── Small status strip at top ── */
-.status-strip {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 14px; background: rgba(0,0,0,0.06);
-  font-size: 12px; color: rgba(0,0,0,0.45);
-}
-.dot { width: 7px; height: 7px; border-radius: 50%; background: #bbb; flex-shrink: 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; flex-shrink: 0; }
 .dot.ok  { background: #3b8a3b; }
 .dot.err { background: #c83232; }
-
-/* ── Main display area ── */
-.display {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: 40px 30px; text-align: center; gap: 20px;
+.status-text { font-size: 13px; color: #666; }
+.conn-bar input {
+  padding: 5px 9px; border: 1px solid #ccc; border-radius: 7px;
+  font-size: 13px; font-family: inherit;
 }
-
-.block-img { line-height: 0; }
-
-.msg-line {
-  font-size: clamp(28px, 5vw, 52px);
-  font-weight: 400;
-  color: #2a2a2a;
-  line-height: 1.25;
-}
-
-.color-name {
-  font-size: clamp(42px, 8vw, 80px);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.1;
-}
-
-.idle-msg {
-  font-size: clamp(18px, 3vw, 28px);
-  color: #aaa;
-  font-style: italic;
-}
-
-.yes-btn {
-  margin-top: 12px;
-  padding: 18px 44px;
-  font-size: clamp(20px, 3.5vw, 34px);
-  font-weight: 700;
-  font-family: inherit;
-  background: #2E7A2E;
-  color: #fff;
-  border: none;
-  border-radius: 16px;
-  cursor: pointer;
-  transition: background .14s, transform .08s;
-}
-.yes-btn:hover   { background: #236423; }
-.yes-btn:active  { transform: scale(0.97); }
-.yes-btn:disabled { opacity: 0.5; cursor: default; }
-
-/* ── ROS URL config (collapsed by default, click status strip to expand) ── */
-.config-drawer {
-  display: none;
-  padding: 10px 14px;
-  background: rgba(0,0,0,0.05);
-  border-bottom: 1px solid rgba(0,0,0,0.08);
-  gap: 8px; align-items: center; flex-wrap: wrap;
-  font-size: 13px;
-}
-.config-drawer.open { display: flex; }
-.config-drawer input {
-  padding: 4px 8px; border: 1px solid #ccc; border-radius: 6px;
-  font-size: 13px; font-family: monospace; width: 210px;
-}
-.config-drawer button {
-  padding: 4px 10px; border: 1px solid #ccc; border-radius: 6px;
+.conn-bar button {
+  padding: 5px 12px; border: 1px solid #ccc; border-radius: 7px;
   background: #fff; cursor: pointer; font-size: 13px; font-family: inherit;
 }
-.config-drawer button:hover { background: #f0f0f0; }
+.conn-bar button:hover { background: #f0f0f0; }
+.conn-bar a { font-size: 13px; color: #185fa5; margin-left: 8px; }
+
+/* ── Topic config bar ── */
+.topic-bar {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  padding: 7px 16px; background: #fafaf8; border-bottom: 1px solid #e8e8e8; align-items: center;
+}
+.topic-bar label { font-size: 11px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.topic-bar input { padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; font-family: monospace; width: 185px; }
+
+/* ── Main layout ── */
+.main { flex: 1; display: flex; padding: 20px; gap: 20px; align-items: stretch; }
+
+/* ── Paint buttons (left column) ── */
+.paint-col { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0; }
+
+.paint-btn {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 18px; border: 2px solid #ddd; border-radius: 14px;
+  background: #fff; cursor: pointer; font-family: inherit;
+  transition: border-color .14s, background .14s, transform .08s;
+  text-align: left; width: 100%;
+}
+.paint-btn:hover  { border-color: var(--accent); background: var(--hover-bg); }
+.paint-btn:active { transform: scale(0.985); }
+.paint-btn.flash  { border-color: var(--accent); background: var(--hover-bg); transform: scale(0.985); }
+.btn-label { font-size: 17px; font-weight: 600; color: #1a1a1a; }
+
+/* ── Arm mode toggle (right column) ── */
+.toggle-col { width: 155px; flex-shrink: 0; display: flex; flex-direction: column; }
+
+.toggle-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  border: 2px solid #ddd; border-radius: 16px; overflow: hidden;
+}
+.toggle-half {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 16px 10px; gap: 7px; cursor: pointer;
+  transition: background .18s, color .18s; user-select: none;
+}
+.toggle-half.active          { background: #185fa5; color: #fff; }
+.toggle-half:not(.active)    { background: #fafaf8; color: #999; }
+.toggle-half:not(.active):hover { background: #eeeeed; color: #555; }
+
+.toggle-glyph { font-size: 26px; line-height: 1; }
+.toggle-label {
+  font-size: 12px; font-weight: 700; text-align: center;
+  text-transform: uppercase; letter-spacing: .05em; line-height: 1.35;
+}
+.toggle-divider { height: 2px; background: #ddd; flex-shrink: 0; }
+
+/* ── Nav Recovery Panel ── */
+.recovery-panel {
+  margin: 0 20px;
+  border: 2px solid #c87800;
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+
+  /* slide-in animation */
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: max-height .32s cubic-bezier(.4,0,.2,1),
+              opacity .25s ease,
+              transform .25s ease,
+              margin-bottom .32s;
+  pointer-events: none;
+}
+.recovery-panel.visible {
+  max-height: 200px;
+  opacity: 1;
+  transform: translateY(0);
+  margin-bottom: 14px;
+  pointer-events: auto;
+}
+
+.recovery-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  background: #fff8ee;
+  border-bottom: 1px solid #f0ddb8;
+}
+.recovery-icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+.recovery-title {
+  font-size: 13px; font-weight: 700; color: #7a4400;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.recovery-dest {
+  font-size: 13px; color: #7a4400; font-family: monospace;
+  background: #f5e8cc; border-radius: 4px; padding: 1px 6px; margin-left: auto;
+}
+
+.recovery-body {
+  display: flex; gap: 10px; padding: 12px 16px; align-items: center;
+}
+.recovery-hint {
+  font-size: 12px; color: #888; flex: 1; line-height: 1.5;
+}
+.recovery-hint strong { color: #555; font-weight: 600; }
+
+.recovery-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.rec-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 9px 16px; border-radius: 10px; border: 2px solid;
+  cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+  transition: background .14s, transform .08s, box-shadow .14s;
+  line-height: 1;
+  background: #fff;
+}
+.rec-btn:hover  { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+.rec-btn:active { transform: scale(0.97); }
+.rec-btn .rec-glyph { font-size: 18px; }
+
+.rec-btn.retry  { border-color: #2860B4; color: #2860B4; }
+.rec-btn.retry:hover  { background: #f0f4fd; }
+
+.rec-btn.skip   { border-color: #2E7A2E; color: #2E7A2E; }
+.rec-btn.skip:hover   { background: #f0faf0; }
+
+.rec-btn.abort  { border-color: #C83232; color: #C83232; }
+.rec-btn.abort:hover  { background: #fdf0f0; }
+
+/* ── Log ── */
+.log-bar { padding: 10px 20px; background: #fff; border-top: 1px solid #e0e0e0; }
+.log {
+  font-family: monospace; font-size: 11px; background: #fafafa;
+  border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px 10px;
+  max-height: 72px; overflow-y: auto; color: #555;
+}
+.log p { margin: 1px 0; line-height: 1.5; }
+.l-ok   { color: #2e6e2e; }
+.l-err  { color: #a32020; }
+.l-info { color: #185fa5; }
+.l-warn { color: #c87800; }
 </style>
 </head>
 <body>
 
-<!-- Status strip — click to expand config -->
-<div class="status-strip" id="strip" style="cursor:pointer" title="Click to configure rosbridge URL">
+<!-- ── Connection bar ── -->
+<div class="conn-bar">
   <span class="dot" id="dot"></span>
-  <span id="conn-label">Connecting&hellip;</span>
-  <span style="margin-left:auto;opacity:0.5">&#9881;</span>
+  <span class="status-text" id="conn-label">Disconnected</span>
+  <input type="text" id="ws-url" value="ws://localhost:9090" style="width:205px">
+  <button id="btn-connect">Connect</button>
+  <button id="btn-disconnect">Disconnect</button>
+  <a href="/humanrequest" target="_blank">Open human request display &rarr;</a>
 </div>
 
-<!-- Collapsible ROS config -->
-<div class="config-drawer" id="drawer">
-  <label style="font-size:12px;color:#666">Rosbridge URL:</label>
-  <input type="text" id="ros-url" value="ws://localhost:9090">
-  <button id="btn-reconnect">Reconnect</button>
-  <label style="font-size:12px;color:#666;margin-left:8px">Button topic:</label>
-  <input type="text" id="t-button" value="/button" style="width:140px">
-  <label style="font-size:12px;color:#666;margin-left:8px">Material topic:</label>
-  <input type="text" id="t-material" value="/requestedmaterial" style="width:160px">
+<!-- ── Topic config ── -->
+<div class="topic-bar">
+  <label>Button topic</label>
+  <input id="t-button" value="/button">
+  <label>Material topic</label>
+  <input id="t-material" value="/requestedmaterial">
+  <label>Arm mode topic</label>
+  <input id="t-armmode" value="/arm_control_mode">
+  <label>Nav recovery</label>
+  <input id="t-nav-prompt"  value="/nav_recovery_prompt"  style="width:210px">
+  <input id="t-nav-choice"  value="/nav_recovery_choice"  style="width:210px">
 </div>
 
-<!-- Main display -->
-<div class="display" id="display">
-  <p class="idle-msg">Waiting for paint block request&hellip;</p>
+<!-- ── Main panel ── -->
+<div class="main">
+
+  <!-- Left: paint buttons -->
+  <div class="paint-col">
+
+    <!-- Red -->
+    <button class="paint-btn" data-color="red"
+      style="--accent:#C83232; --hover-bg:#fdf0f0">
+      <svg viewBox="0 0 100 66" xmlns="http://www.w3.org/2000/svg" width="90" height="59" style="display:block;overflow:visible">
+        <rect x="2" y="28" width="96" height="34" rx="5" fill="#C83232"/>
+        <rect x="2" y="56" width="96" height="6" rx="3" fill="#A02828"/>
+        <rect x="2" y="28" width="96" height="10" rx="4" fill="#E85555" opacity="0.45"/>
+        <rect x="13" y="12" width="24" height="18" fill="#C83232"/>
+        <rect x="63" y="12" width="24" height="18" fill="#C83232"/>
+        <ellipse cx="25" cy="28" rx="12" ry="5" fill="#A02828"/>
+        <ellipse cx="75" cy="28" rx="12" ry="5" fill="#A02828"/>
+        <ellipse cx="25" cy="12" rx="12" ry="6" fill="#E85555"/>
+        <ellipse cx="75" cy="12" rx="12" ry="6" fill="#E85555"/>
+        <ellipse cx="21" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+        <ellipse cx="71" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+      </svg>
+      <span class="btn-label">Get Red Paint</span>
+    </button>
+
+    <!-- Blue -->
+    <button class="paint-btn" data-color="blue"
+      style="--accent:#2860B4; --hover-bg:#f0f4fd">
+      <svg viewBox="0 0 100 66" xmlns="http://www.w3.org/2000/svg" width="90" height="59" style="display:block;overflow:visible">
+        <rect x="2" y="28" width="96" height="34" rx="5" fill="#2860B4"/>
+        <rect x="2" y="56" width="96" height="6" rx="3" fill="#1A4A94"/>
+        <rect x="2" y="28" width="96" height="10" rx="4" fill="#4A85DC" opacity="0.45"/>
+        <rect x="13" y="12" width="24" height="18" fill="#2860B4"/>
+        <rect x="63" y="12" width="24" height="18" fill="#2860B4"/>
+        <ellipse cx="25" cy="28" rx="12" ry="5" fill="#1A4A94"/>
+        <ellipse cx="75" cy="28" rx="12" ry="5" fill="#1A4A94"/>
+        <ellipse cx="25" cy="12" rx="12" ry="6" fill="#4A85DC"/>
+        <ellipse cx="75" cy="12" rx="12" ry="6" fill="#4A85DC"/>
+        <ellipse cx="21" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+        <ellipse cx="71" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+      </svg>
+      <span class="btn-label">Get Blue Paint</span>
+    </button>
+
+    <!-- Yellow -->
+    <button class="paint-btn" data-color="yellow"
+      style="--accent:#D4A800; --hover-bg:#fdf9e0">
+      <svg viewBox="0 0 100 66" xmlns="http://www.w3.org/2000/svg" width="90" height="59" style="display:block;overflow:visible">
+        <rect x="2" y="28" width="96" height="34" rx="5" fill="#D4A800"/>
+        <rect x="2" y="56" width="96" height="6" rx="3" fill="#B48800"/>
+        <rect x="2" y="28" width="96" height="10" rx="4" fill="#EBC830" opacity="0.45"/>
+        <rect x="13" y="12" width="24" height="18" fill="#D4A800"/>
+        <rect x="63" y="12" width="24" height="18" fill="#D4A800"/>
+        <ellipse cx="25" cy="28" rx="12" ry="5" fill="#B48800"/>
+        <ellipse cx="75" cy="28" rx="12" ry="5" fill="#B48800"/>
+        <ellipse cx="25" cy="12" rx="12" ry="6" fill="#EBC830"/>
+        <ellipse cx="75" cy="12" rx="12" ry="6" fill="#EBC830"/>
+        <ellipse cx="21" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+        <ellipse cx="71" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+      </svg>
+      <span class="btn-label">Get Yellow Paint</span>
+    </button>
+
+    <!-- Green -->
+    <button class="paint-btn" data-color="green"
+      style="--accent:#2E7A2E; --hover-bg:#f0faf0">
+      <svg viewBox="0 0 100 66" xmlns="http://www.w3.org/2000/svg" width="90" height="59" style="display:block;overflow:visible">
+        <rect x="2" y="28" width="96" height="34" rx="5" fill="#2E7A2E"/>
+        <rect x="2" y="56" width="96" height="6" rx="3" fill="#1E5A1E"/>
+        <rect x="2" y="28" width="96" height="10" rx="4" fill="#4AAA4A" opacity="0.45"/>
+        <rect x="13" y="12" width="24" height="18" fill="#2E7A2E"/>
+        <rect x="63" y="12" width="24" height="18" fill="#2E7A2E"/>
+        <ellipse cx="25" cy="28" rx="12" ry="5" fill="#1E5A1E"/>
+        <ellipse cx="75" cy="28" rx="12" ry="5" fill="#1E5A1E"/>
+        <ellipse cx="25" cy="12" rx="12" ry="6" fill="#4AAA4A"/>
+        <ellipse cx="75" cy="12" rx="12" ry="6" fill="#4AAA4A"/>
+        <ellipse cx="21" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+        <ellipse cx="71" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>
+      </svg>
+      <span class="btn-label">Get Green Paint</span>
+    </button>
+
+  </div><!-- /.paint-col -->
+
+  <!-- Right: arm mode toggle -->
+  <div class="toggle-col">
+    <div class="toggle-wrap">
+
+      <div class="toggle-half active" id="half-spring" onclick="setMode('spring_controller')">
+        <div class="toggle-glyph">&#x2948;</div>
+        <div class="toggle-label">Spring<br>Controller</div>
+      </div>
+
+      <div class="toggle-divider"></div>
+
+      <div class="toggle-half" id="half-hold" onclick="setMode('hold_position')">
+        <div class="toggle-glyph">&#x29BF;</div>
+        <div class="toggle-label">Hold<br>Position</div>
+      </div>
+
+    </div>
+  </div><!-- /.toggle-col -->
+
+</div><!-- /.main -->
+
+<!-- ── Nav Recovery Panel ── -->
+<div class="recovery-panel" id="recovery-panel">
+  <div class="recovery-header">
+    <span class="recovery-icon">⚠️</span>
+    <span class="recovery-title">Navigation Failed</span>
+    <span class="recovery-dest" id="recovery-dest">—</span>
+  </div>
+  <div class="recovery-body">
+    <p class="recovery-hint">
+      Robot could not reach destination.<br>
+      <strong>Retry</strong> Nav2 &nbsp;·&nbsp;
+      <strong>Skip</strong> and proceed anyway &nbsp;·&nbsp;
+      <strong>Abort</strong> back to idle &nbsp;·&nbsp;
+      or use <strong>RViz 2D Pose Estimate</strong> to relocalize, then retry.
+    </p>
+    <div class="recovery-actions">
+      <button class="rec-btn retry" onclick="sendRecovery('retry')">
+        <span class="rec-glyph">↺</span>
+        Retry
+      </button>
+      <button class="rec-btn skip" onclick="sendRecovery('skip')">
+        <span class="rec-glyph">⇥</span>
+        Skip
+      </button>
+      <button class="rec-btn abort" onclick="sendRecovery('abort')">
+        <span class="rec-glyph">✕</span>
+        Abort
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Activity log ── -->
+<div class="log-bar">
+  <div class="log" id="log">
+    <p class="l-info">Ready &mdash; connect to rosbridge to publish.</p>
+  </div>
 </div>
 
 <script>
 'use strict';
+let ros = null;
+let navPromptSub = null;
 
-// ── Color palette (matches index.html) ──────────────────────────────────
-const COLORS = {
-  red:    { main: '#C83232', light: '#E85555', dark: '#A02828', bg: '#fff4f4' },
-  blue:   { main: '#2860B4', light: '#4A85DC', dark: '#1A4A94', bg: '#f4f7ff' },
-  yellow: { main: '#D4A800', light: '#EBC830', dark: '#B48800', bg: '#fffce8' },
-  green:  { main: '#2E7A2E', light: '#4AAA4A', dark: '#1E5A1E', bg: '#f4fff4' },
-};
-
-// ── Inline SVG brick ─────────────────────────────────────────────────────
-function brickSVG(colorName, size) {
-  const c = COLORS[colorName];
-  if (!c) return '';
-  const h = Math.round(size * 0.66);
-  return (
-    `<svg viewBox="0 0 100 66" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${h}" style="display:block;overflow:visible">` +
-    `<rect x="2" y="28" width="96" height="34" rx="5" fill="${c.main}"/>` +
-    `<rect x="2" y="56" width="96" height="6" rx="3" fill="${c.dark}"/>` +
-    `<rect x="2" y="28" width="96" height="10" rx="4" fill="${c.light}" opacity="0.45"/>` +
-    `<rect x="13" y="12" width="24" height="18" fill="${c.main}"/>` +
-    `<rect x="63" y="12" width="24" height="18" fill="${c.main}"/>` +
-    `<ellipse cx="25" cy="28" rx="12" ry="5" fill="${c.dark}"/>` +
-    `<ellipse cx="75" cy="28" rx="12" ry="5" fill="${c.dark}"/>` +
-    `<ellipse cx="25" cy="12" rx="12" ry="6" fill="${c.light}"/>` +
-    `<ellipse cx="75" cy="12" rx="12" ry="6" fill="${c.light}"/>` +
-    `<ellipse cx="21" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>` +
-    `<ellipse cx="71" cy="9" rx="6" ry="3" fill="rgba(255,255,255,0.45)"/>` +
-    `</svg>`
-  );
+function addLog(msg, cls) {
+  const el = document.getElementById('log');
+  const p  = document.createElement('p');
+  if (cls) p.className = cls;
+  p.textContent = new Date().toTimeString().slice(0, 8) + '  ' + msg;
+  el.appendChild(p);
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 80) el.removeChild(el.firstChild);
 }
 
-// ── State machine ────────────────────────────────────────────────────────
-// idle   → (receive /requestedmaterial) → please
-// please → (receive /button)            → thankyou
-// thankyou → (receive /requestedmaterial for next request) → please
-let state = 'idle';
-let currentColor = null;
-
-function brickSize() {
-  return Math.min(220, Math.round(window.innerWidth * 0.28));
-}
-
-function renderDisplay() {
-  const el = document.getElementById('display');
-
-  if (state === 'idle') {
-    document.body.style.background = '#f0f0ee';
-    el.innerHTML = '<p class="idle-msg">Waiting for paint block request…</p>';
+function pub(topicName, msgType, payload) {
+  const msg = (typeof payload === 'string') ? { data: payload } : payload;
+  if (!ros || !ros.isConnected) {
+    addLog('[offline] ' + topicName + ' → ' + JSON.stringify(msg), 'l-info');
     return;
   }
-
-  const c = COLORS[currentColor];
-  if (!c) return;
-
-  document.body.style.background = c.bg;
-
-  const svg = brickSVG(currentColor, brickSize());
-  const colorLabel = '<span class="color-name" style="color:' + c.main + '">' + currentColor + '</span>';
-
-  if (state === 'please') {
-    el.innerHTML =
-      '<div class="block-img">' + svg + '</div>' +
-      '<p class="msg-line">Please may I have a</p>' +
-      colorLabel +
-      '<p class="msg-line">block?</p>' +
-      '<button class="yes-btn" id="yes-btn">Yes, here you go!</button>';
-    document.getElementById('yes-btn').addEventListener('click', function() {
-      this.disabled = true;
-      giveBlock();
-    });
-  } else if (state === 'thankyou') {
-    el.innerHTML =
-      '<div class="block-img">' + svg + '</div>' +
-      '<p class="msg-line">Thank you for the</p>' +
-      colorLabel +
-      '<p class="msg-line">block!</p>';
-  }
+  const t = new ROSLIB.Topic({ ros: ros, name: topicName, messageType: msgType });
+  t.publish(new ROSLIB.Message(msg));
+  addLog('→ ' + topicName + ': ' + JSON.stringify(msg), 'l-ok');
 }
 
-// ── Publish helpers ─────────────────────────────────────────────────────
-function pubTopic(name, data) {
-  if (!ros || !ros.isConnected) return;
-  const t = new ROSLIB.Topic({ ros: ros, name: name, messageType: 'std_msgs/msg/String' });
-  t.publish(new ROSLIB.Message({ data: data }));
+function pubById(inputId, msgType, payload) {
+  pub(document.getElementById(inputId).value.trim(), msgType, payload);
 }
 
-// Publish /requestedmaterial first, then /button.
-// The page receives its own echoes; /requestedmaterial keeps us in "please",
-// then /button advances to "thankyou".
-function giveBlock() {
-  const materialTopic = document.getElementById('t-material').value.trim();
-  const buttonTopic   = document.getElementById('t-button').value.trim();
-  pubTopic(materialTopic, currentColor);
-  pubTopic(buttonTopic, 'go');
+// ── Nav recovery ───────────────────────────────────────────────
+function showRecoveryPanel(destination) {
+  const destEl = document.getElementById('recovery-dest');
+  destEl.textContent = destination || 'unknown';
+  document.getElementById('recovery-panel').classList.add('visible');
+  addLog('Nav failure at "' + destination + '" — awaiting recovery choice', 'l-warn');
 }
 
-// ── ROS connection ───────────────────────────────────────────────────────
-let ros = null;
-let materialSub = null;
-let buttonSub   = null;
-
-function defaultRosUrl() {
-  // Use URL param ?ros=ws://... or default to same host on port 9090
-  const params = new URLSearchParams(location.search);
-  return params.get('ros') || ('ws://' + location.hostname + ':9090');
+function hideRecoveryPanel() {
+  document.getElementById('recovery-panel').classList.remove('visible');
 }
 
-function connectRos(url) {
-  if (ros) { try { ros.close(); } catch(e) {} }
+function sendRecovery(choice) {
+  const topic = document.getElementById('t-nav-choice').value.trim();
+  pub(topic, 'std_msgs/msg/String', choice);
+  addLog('Nav recovery: ' + choice, choice === 'abort' ? 'l-err' : choice === 'skip' ? 'l-warn' : 'l-ok');
+  hideRecoveryPanel();
+}
+
+function subscribeNavPrompt() {
+  if (navPromptSub) { navPromptSub.unsubscribe(); navPromptSub = null; }
+  const topic = document.getElementById('t-nav-prompt').value.trim();
+  navPromptSub = new ROSLIB.Topic({
+    ros: ros,
+    name: topic,
+    messageType: 'std_msgs/msg/String',
+  });
+  navPromptSub.subscribe(function(msg) {
+    // payload format: "nav_failed:<destination>"
+    const parts = (msg.data || '').split(':');
+    const destination = parts.length > 1 ? parts.slice(1).join(':') : msg.data;
+    showRecoveryPanel(destination);
+  });
+  addLog('Subscribed to ' + topic, 'l-info');
+}
+
+// ── Paint buttons ──────────────────────────────────────────────
+document.querySelectorAll('.paint-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const color = btn.dataset.color;
+    pubById('t-button',   'std_msgs/msg/String', 'go');
+    setTimeout(function() {
+      pubById('t-material', 'std_msgs/msg/String', color);
+    }, 150);
+    btn.classList.add('flash');
+    setTimeout(function() { btn.classList.remove('flash'); }, 380);
+    addLog('Requested ' + color + ' paint block', 'l-info');
+  });
+});
+
+// ── Arm mode toggle ────────────────────────────────────────────
+function setMode(mode) {
+  document.getElementById('half-spring').classList.toggle('active', mode === 'spring_controller');
+  document.getElementById('half-hold').classList.toggle('active',   mode === 'hold_position');
+  pubById('t-armmode', 'std_msgs/msg/String', mode);
+}
+
+// ── Rosbridge connection ───────────────────────────────────────
+function connectRos() {
+  const url = document.getElementById('ws-url').value.trim();
+  if (ros) ros.close();
   ros = new ROSLIB.Ros({ url: url });
-
   ros.on('connection', function() {
     document.getElementById('dot').className = 'dot ok';
-    document.getElementById('conn-label').textContent = 'Connected to ' + url;
-    subscribe();
+    document.getElementById('conn-label').textContent = 'Connected';
+    addLog('Connected to ' + url, 'l-ok');
+    subscribeNavPrompt();
   });
   ros.on('error', function(e) {
     document.getElementById('dot').className = 'dot err';
-    document.getElementById('conn-label').textContent = 'Connection error — click to configure';
+    document.getElementById('conn-label').textContent = 'Error';
+    addLog('ROS error: ' + (e.message || String(e)), 'l-err');
   });
   ros.on('close', function() {
     document.getElementById('dot').className = 'dot';
-    document.getElementById('conn-label').textContent = 'Disconnected — click to configure';
+    document.getElementById('conn-label').textContent = 'Disconnected';
+    addLog('Disconnected');
+    navPromptSub = null;
+    hideRecoveryPanel();
   });
 }
 
-function subscribe() {
-  const buttonTopic   = document.getElementById('t-button').value.trim();
-  const materialTopic = document.getElementById('t-material').value.trim();
-
-  // Subscribe to /requestedmaterial → transition to "please"
-  materialSub = new ROSLIB.Topic({ ros: ros, name: materialTopic, messageType: 'std_msgs/msg/String' });
-  materialSub.subscribe(function(msg) {
-    const color = (msg.data || '').toLowerCase().trim();
-    if (!COLORS[color]) return;
-    currentColor = color;
-    state = 'please';
-    renderDisplay();
-  });
-
-  // Subscribe to /button → advance to "thank you" only when in "please" state.
-  // The initial "go" from clicking a paint button is sent BEFORE /requestedmaterial
-  // (150 ms earlier), so when it arrives we are still in "idle" and it is ignored.
-  buttonSub = new ROSLIB.Topic({ ros: ros, name: buttonTopic, messageType: 'std_msgs/msg/String' });
-  buttonSub.subscribe(function() {
-    if (state === 'please') {
-      state = 'thankyou';
-      renderDisplay();
-    }
-  });
-}
-
-// Toggle config drawer
-document.getElementById('strip').addEventListener('click', function() {
-  document.getElementById('drawer').classList.toggle('open');
+document.getElementById('btn-connect').addEventListener('click', connectRos);
+document.getElementById('btn-disconnect').addEventListener('click', function() {
+  if (ros) ros.close();
 });
-
-document.getElementById('btn-reconnect').addEventListener('click', function() {
-  const url = document.getElementById('ros-url').value.trim();
-  connectRos(url);
-});
-
-window.addEventListener('resize', function() {
-  if (state !== 'idle') renderDisplay();
-});
-
-// Auto-connect on load
-const rosUrl = defaultRosUrl();
-document.getElementById('ros-url').value = rosUrl;
-connectRos(rosUrl);
 </script>
 </body>
 </html>

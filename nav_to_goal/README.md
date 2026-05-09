@@ -74,14 +74,6 @@ ros2 launch nav_to_goal bringup.launch.py \
     depth_image_topic:=/camera/depth/image_raw
 ```
 
-### TurtleBot4 (OAK-D camera)
-```bash
-ros2 launch nav_to_goal bringup.launch.py \
-    depth_image_topic:=/oakd/stereo/image_raw \
-    depth_info_topic:=/oakd/stereo/camera_info \
-    robot_base_frame:=base_link \
-    goal_x:=2.0 goal_y:=1.0
-```
 
 ### Gazebo simulation
 ```bash
@@ -132,10 +124,36 @@ The only values that change per robot are:
 Everything else (SLAM, Nav2 stack, goal logic) is fully generic.
 
 ---
+## Making a map
+Launch the robot and the rosbridge with the instructions from:
+https://docs.google.com/document/d/1Kw_JVrSo9lak-vepSjTjmib_KBXwqYstHOnxjuZmc70/edit?tab=t.0#heading=h.fu75192cymco
+(but you can use the turtlebot launch file ros2 launch turtlebot_bringup.launch.py on the kobuki turtlebot)
+
+In a second terminal on the turtlebot:
+ros2 run kobuki_keyop kobuki_keyop_node --ros-args -r /cmd_vel:=/commands/velocity
+This will allow you to teleop to make the map
+
+On your ROS2 computer:
+Run the rosbridge client:
+- activate the venv
+  source ~/.ros_venv/bin/activate
+- export the python environment for ROS
+  export PYTHONPATH=$VIRTUAL_ENV/lib/python3.12/site-packages:$PYTHONPATH
+- run the bridge
+  ros2 run nav_to_goal turtlebot_bridge
+
+Run nav2 and SLAM:
+- ros2 launch slam_toolbox online_async_launch.py use_sim_time:=False
+- ros2 launch nav2_bringup navigation_launch.py \
+  use_sim_time:=false \
+  params_file:=<ros_ws>/nav_2params.yaml (or wherever you put your parameters file)
+  
+Open RViz and add the map feature, and teleop the robot around to build the map. The map origin should be where the robot's odom starts (wherever it was when you launched the controller on the turtlebot side)
 
 ## Saving a map
 
-Once the robot has explored, save the map for later re-use:
+Once the robot has explored AND BEFORE STOPPING SLAM or NAV2,
+save the map for later re-use:
 
 ```bash
 ros2 run nav2_map_server map_saver_cli -f ~/my_room_map

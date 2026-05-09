@@ -60,7 +60,7 @@ class RobotFetchNode(Node):
         self.declare_parameter("home_y", 0.0)
         self.declare_parameter("home_yaw", 0.0)
         self.declare_parameter("supply_closet_x", -0.105)
-        self.declare_parameter("supply_closet_y", -0.59)
+        self.declare_parameter("supply_closet_y", 0.5)
         self.declare_parameter("supply_closet_yaw", 0.0)
 
         self.requested_object_color = "red"
