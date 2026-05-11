@@ -34,7 +34,8 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
-from std_msgs.msg import String
+from std_msgs.msg import String, Empty
+import action_msgs.srv
 
 from bph_interfaces.srv import GoToLocation
 
@@ -69,6 +70,8 @@ class NavigatorNode(Node):
 
         # ── Publishers ────────────────────────────────────────────────────────
         self._status_pub = self.create_publisher(String, "/navigation_status", 10)
+        self._cancel_sub = self.create_subscription(
+        Empty, "/navigate_to_cancel", self._cancel_callback, 10)
 
         # ── Action client ─────────────────────────────────────────────────────
         self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -137,7 +140,26 @@ class NavigatorNode(Node):
             response.accepted = False
             response.message  = f"Exception: {e}"
             return response
+        
+    def _cancel_callback(self, _msg: Empty) -> None:
+        """Cancel the active Nav2 goal when the state machine requests it."""
+        if self._active_goal_handle is None:
+            self.get_logger().warn("[cancel_cb] No active goal to cancel.")
+            return
+        self.get_logger().info("[cancel_cb] Cancelling active Nav2 goal…")
+        cancel_future = self._active_goal_handle.cancel_goal_async()
+        cancel_future.add_done_callback(self._cancel_response_callback)
 
+    def _cancel_response_callback(self, future) -> None:
+        resp = future.result()
+        if resp.return_code == action_msgs.srv.CancelGoal.Response.ERROR_NONE:
+            self.get_logger().info("[cancel_cb] Goal cancellation accepted by Nav2.")
+        else:
+            self.get_logger().warn(
+                f"[cancel_cb] Cancellation rejected (code {resp.return_code}) — "
+                "goal may have already finished."
+            )
+        self._active_goal_handle = None
     # ── Goal sending ──────────────────────────────────────────────────────────
 
     def _send_goal(self) -> None:
@@ -167,6 +189,7 @@ class NavigatorNode(Node):
             msg.data = "ABORTED"
             self._status_pub.publish(msg)
             return
+        self._active_goal_handle = goal_handle
         self.get_logger().info("Goal ACCEPTED — robot is navigating...")
         goal_handle.get_result_async().add_done_callback(self._result_callback)
 
@@ -178,6 +201,7 @@ class NavigatorNode(Node):
         )
 
     def _result_callback(self, future) -> None:
+        self._active_goal_handle = None # Clear active goal handle when done
         status = future.result().status
         msg    = String()
 
