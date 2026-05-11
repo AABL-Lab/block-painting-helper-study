@@ -104,7 +104,7 @@ class RobotFetchNode(Node):
         return result[0]
 
     def build_and_run_sm(self):
-        pickmeup = BphPickmeupClient(self)
+        #pickmeup = BphPickmeupClient(self)
 
         sm = smach.StateMachine(outcomes=["task_complete"])
         sm.userdata.target_pose = None
@@ -131,7 +131,7 @@ class RobotFetchNode(Node):
                 transitions={"proceed": "PICK_AND_PLACE"},
             )
             smach.StateMachine.add(
-                "PICK_AND_PLACE", PickAndPlace(self, pickmeup),
+                "PICK_AND_PLACE", PickAndPlace(self, BphPickmeupClient(self)),
                 transitions={"arm_at_grasp_position": "GRASPING", "failed": "WAIT"},
             )
             smach.StateMachine.add(
@@ -139,7 +139,7 @@ class RobotFetchNode(Node):
                 transitions={"grasp_confirmed": "MOVE_TO_WORKSPACE"},
             )
             smach.StateMachine.add(
-                "MOVE_TO_WORKSPACE", MoveToWorkspace(self, pickmeup),
+                "MOVE_TO_WORKSPACE", MoveToWorkspace(self, BphPickmeupClient(self)),
                 transitions={"in_workspace": "SPRING_CONTROLLER", "failed": "WAIT"},
             )
             smach.StateMachine.add(
@@ -495,7 +495,9 @@ class MoveToWorkspace(_FetchState):
 
     def execute(self, userdata):
         self._node.get_logger().info("[MoveToWorkspace] Moving arm to workspace...")
+        self._node.get_logger().info("[MoveToWorkspace] Calling send_goal now...")
         success, code = self._pickmeup.send_goal(position_name="workspace")
+        self._node.get_logger().info(f"[MoveToWorkspace] send_goal returned: success={success}, code={code}")
         if success:
             return "in_workspace"
         self._node.get_logger().warn("[MoveToWorkspace] Arm move failed, code=%d" % code)
