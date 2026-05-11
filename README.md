@@ -6,6 +6,13 @@ Includes ros packages:
 - bph_pickmeup:  a MoveIt package for picking up an object and moving it into the user's workspace (AI status: original code handwritten based on examples, modifications to make into a service with interactive help from Claude)
 - nav_to_goal: a Nav2 node for moving around the room avoiding obstacles to retrieve the desired object (AI status: heavily debugged with Claude)
 - bph_statemachine: a SMACH package for high-level control of the system and triggering the other nodes (AI status: initial scaffold structure created by Claude, hand-edited to add state behavior, Claude-added failure state integration with the UI)
+**** Also includes bph_statemachine sm_display,
+**** an entirely hand-built node with no AI used at all
+**** written after I realized that the prior hand-built nodes
+**** had later been debugged with AI support.
+Replaces SMACH viewer (sort of) which does not work straightforwardly in Kilted
+
+
 - bph_userinterface: a simple webserver for sending material requests or resolving navigation errors (AI status: Claude-generated to a specification)
 
 - (not connected to the demo) person_finder:  a node using OpenCV and YOLO to find people in the room who might need to be avoided by either the Turtlebot or the manipulator arm (AI status: Claude-generated)
@@ -45,6 +52,16 @@ Clone both this package and SpringController to your workspace.
   (this allows ROS to use the venv)
   (This also goes in the launch file, but is needed for debug)
 
+UI: now included in demo.launch:
+User interface:
+   ros2 run rosbridge_server rosbridge_websocket --ros-args -p port:=9405 -p "qos_overrides./button.subscription.durability:=volatile" -p "qos_overrides./requestedmaterial.subscription.durability:=volatile" 
+
+second terminal:
+  python3 /home/katallen/sandbox/src/block-painting-helper/bph_userinterface/bph_ui_server.py 
+
+
+
+
 ######################RUNNING THE FULL STACK ##################
 
 This demo runs on 2-3 computers, I ran it on one attached to the
@@ -70,15 +87,12 @@ On your static computer:
    source ~/.ros_venv/bin/activate
    ssh -L 9090:localhost:9090 baymax@10.5.10.74 (check this IP)
 
-Everything else robot:
+Everything else:
    source ~/.ros_venv/bin/activate
    ros2 launch bph_statemachine demo.launch.py
 
-User interface:
-   ros2 run rosbridge_server rosbridge_websocket --ros-args -p port:=9405 -p "qos_overrides./button.subscription.durability:=volatile" -p "qos_overrides./requestedmaterial.subscription.durability:=volatile" 
-
-second terminal:
-  python3 /home/katallen/sandbox/src/block-painting-helper/bph_userinterface/bph_ui_server.py 
+SM viewer:
+ros2 run bph_statemachine sm_display 
 
 
 STATUS:

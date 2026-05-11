@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'simple_sm_node = bph_statemachine.simplified_sm:main',
+            'sm_display = bph_statemachine.statemachine_monitor_node:main',
         ],
     },
 )

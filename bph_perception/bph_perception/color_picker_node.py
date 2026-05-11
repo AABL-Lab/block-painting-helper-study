@@ -392,7 +392,7 @@ class ColorPickerNode(Node):
             pt_world = self._tf_buffer.transform(
                 pt, "world", timeout=rclpy.duration.Duration(seconds=0.1),
             )
-        except:
+        except Exception as e:
             self.get_logger().warn(f"TF2 to world failed: {e}")
             return None  # caller will use pre_grasp fallback
 
