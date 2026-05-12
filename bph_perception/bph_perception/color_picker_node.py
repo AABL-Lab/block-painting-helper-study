@@ -38,7 +38,7 @@ Coordinate frame
 ~~~~~~~~~~~~~~~~
 Pixel centroid (u, v) is back-projected into the camera optical frame using
 the pinhole model and a fixed Z = cam_z - object_height_m, then transformed
-into the map frame via tf2.
+into the world (arm base) frame via tf2.
 
 TODO items
 ~~~~~~~~~~
@@ -274,7 +274,7 @@ class ColorPickerNode(Node):
         pose = self._pixel_to_map(centroid_px)
         if pose is None:
             response.success = False
-            response.message = "TF2 transform to map frame failed"
+            response.message = "TF2 transform to world frame failed"
             return response
 
         # ── Publish debug image ──────────────────────────────────────────────
@@ -382,7 +382,8 @@ class ColorPickerNode(Node):
         Z    = self._effective_z
 
         pt = PointStamped()
-        pt.header.frame_id = self._camera_info.header.frame_id
+        pt.header.frame_id = "bph_overhead_camera_optical_frame"
+        #FIXME make a parameter later
         pt.header.stamp    = self.get_clock().now().to_msg()
         pt.point.x = (u - cx_i) * Z / fx
         pt.point.y = (v - cy_i) * Z / fy
@@ -397,10 +398,10 @@ class ColorPickerNode(Node):
             return None  # caller will use pre_grasp fallback
 
         pose = PoseStamped()
-        pose.header = pt_map.header
-        pose.pose.position.x    = pt_map.point.x
-        pose.pose.position.y    = pt_map.point.y
-        pose.pose.position.z    = pt_map.point.z
+        pose.header = pt_world.header
+        pose.pose.position.x    = pt_world.point.x
+        pose.pose.position.y    = pt_world.point.y
+        pose.pose.position.z    = pt_world.point.z
         pose.pose.orientation.w = 1.0  # identity — arm planner handles approach angle
         return pose
 

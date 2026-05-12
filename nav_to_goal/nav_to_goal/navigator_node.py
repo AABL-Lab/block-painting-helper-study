@@ -68,6 +68,7 @@ class NavigatorNode(Node):
         self._goal_y       = 0.0
         self._goal_yaw     = 0.0
 
+        self._active_goal_handle = None
         # ── Publishers ────────────────────────────────────────────────────────
         self._status_pub = self.create_publisher(String, "/navigation_status", 10)
         self._cancel_sub = self.create_subscription(

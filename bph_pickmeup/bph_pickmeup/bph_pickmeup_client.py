@@ -9,7 +9,7 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from moveit_msgs.msg import MoveItErrorCodes
-
+from sensor_msgs.msg import JointState
 from bph_interfaces.action import BphPickmeup
 
 
@@ -30,6 +30,25 @@ class BphPickmeupClient:
         else:
             self._node.get_logger().info("Connected to /bph_pickmeup.")
 
+    def _wait_for_joint_states(self, timeout: float = 5.0) -> bool:
+        """Block until a non-empty JointState arrives on /joint_states."""
+        ready = threading.Event()
+        
+        def cb(msg: JointState):
+            if msg.name and not ready.is_set():
+                ready.set()
+                
+        sub = self._node.create_subscription(JointState, "/joint_states", cb, 10)
+        got_it = ready.wait(timeout=timeout)
+        self._node.destroy_subscription(sub)
+                
+        if not got_it:
+            self._node.get_logger().warn(
+                "[BphPickmeupClient] Timed out waiting for /joint_states — "
+                "MoveIt may use a stale start state."
+            )
+        return got_it
+            
     def send_goal(
         self,
         joint_angles: list[float] | None = None,
@@ -50,6 +69,7 @@ class BphPickmeupClient:
         (success: bool, error_code: int)
             error_code mirrors MoveItErrorCodes.val; 1 == SUCCESS.
         """
+        self._wait_for_joint_states()
         goal = BphPickmeup.Goal()
         goal.joint_angles = list(joint_angles) if joint_angles else []
         goal.position_name = position_name

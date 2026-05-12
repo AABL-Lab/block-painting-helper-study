@@ -13,8 +13,8 @@ Launches the full block-painting-helper demo stack:
                          currently loaded separately from different computer
   6. color_picker_node   — overhead-camera colour-based object localisation
   7. simple_sm_node      — top-level SMACH state machine
+  8. rosbridge with user interface website
 
-FIXME: document all the parameters here
 
 Example:
   ros2 launch bph_statemachine demo.launch.py use_sim_time:=false
@@ -379,8 +379,8 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='arm_base_to_map_tf',
         arguments=[
-            '0.2176', '0.665', '0.936',  # x, y, z in map frame
-            '0.0', '0.0', '0.0',         # yaw, pitch, roll
+            '0.5576', '0.2', '0.936',  # x, y, z in map frame
+            '-1.57', '0.0', '0.0',         # yaw, pitch, roll
             'map', 'world'
         ]
     )
@@ -481,8 +481,11 @@ def generate_launch_description():
         moveit_bringup, 
 
         
-        LogInfo(msg="[demo] Starting arm pick-and-place server ..."),
-        pickmeup_node,
+        LogInfo(msg="[demo] Waiting 30s and starting arm pick-and-place server ..."),
+        TimerAction(
+            period=30.0,   # MoveIt is slow to start
+            actions=[pickmeup_node],
+        ),
 
         LogInfo(msg="[demo] Starting colour-picker perception node ..."),
         color_picker_node,

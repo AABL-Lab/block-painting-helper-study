@@ -74,13 +74,18 @@ to each other (I used subnet)
 
 TURTLEBOT SETUP:
   ssh into the Turtlebot laptop from the machine
-  that will be running the demo.launch script:
+  that will be running the demo.launch script with
+  ssh -L 9090:localhost:9090 username@turtlebotIP
  - cd into wherever you copied the bringup script and run:
        ros2 launch turtlebot_bringup.launch.py
 
 CAMERA SETUP:
   On your machine local to the camera:
     ros2 run v4l2_camera v4l2_camera_node  --ros-args -r image_raw:=/bph_overhead_camera/image_raw -r video_device:='/dev/video0'
+
+If you want to view the debug image for color_picker:
+ros2 run rqt_image_view rqt_image_view /color_picker/debug_image
+
 
 On your static computer:
    To enable rosbridge safely across the local network:
