@@ -10,12 +10,24 @@ from launch.actions import (
     LogInfo,
     SetEnvironmentVariable,
 )
+import sys
+import os
+import math
 
 def generate_launch_description():
 
     # ---------------------------------------------------------------------------
     # Launch arguments
-    # ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------    # ── Inject venv site-packages so all nodes pick up extra dependencies ────
+    _home = os.path.expanduser("~")
+
+    # make sure this matches the name of your venv
+    # if it isn't springcontroller_venv 
+    _venv_site = (
+        f"{_home}/.springcontroller_venv/lib/"
+        f"python{sys.version_info.major}.{sys.version_info.minor}"
+        "/site-packages"
+    )
 
     # --- UR robot driver ---
     robot_ip_arg = DeclareLaunchArgument(
@@ -40,7 +52,8 @@ def generate_launch_description():
     urdf_path_arg = DeclareLaunchArgument(
         "urdf_path",
         default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS",
-        default_value="/home/katallen/sandbox"), "src/springcontroller/springcontroller/flat_urdf_files/ceeorobot_flat.urdf"]),
+        default_value=os.path.join(os.path.expanduser("~"),"workspace")),
+        "src/springcontroller/springcontroller/flat_urdf_files/ceeorobot_flat.urdf"]),
         description="Absolute path to the URDF file used by the virtual spring node.",
     )
 
@@ -65,7 +78,8 @@ def generate_launch_description():
 
     kinematics_params = DeclareLaunchArgument(
         "kinematics_params",
-        default_value="home/katallen/my_robot_calibration.yaml",
+        default_value=os.path.join(os.path.expanduser("~"),
+                                   "my_robot_calibration.yaml"),
         description="Kinematics Calibration file made from ros2 launch ur_calibration calibration_correction.launch.py",
         )
         
@@ -73,7 +87,7 @@ def generate_launch_description():
     springconfig_arg = DeclareLaunchArgument(
         "springconfig",
         default_value=PathJoinSubstitution([EnvironmentVariable("ROS_WS",
-        default_value="/home/katallen/sandbox"),
+        default_value=os.path.join(os.path.expanduser("~"),"workspace")),
         "src/springcontroller/springcontroller/config/demosprings.yaml"]),
     )
 
@@ -105,6 +119,9 @@ def generate_launch_description():
         name="virtual_spring_node",
         output="screen",
         emulate_tty=True,
+        additional_env={
+            "PYTHONPATH": _venv_site + ":" + os.environ.get("PYTHONPATH", ""),
+            },
         parameters=[
             {"urdf_path": LaunchConfiguration("urdf_path"),
              "config_path": LaunchConfiguration("springconfig"),
@@ -134,6 +151,7 @@ def generate_launch_description():
     # ---------------------------------------------------------------------------
     return LaunchDescription([
         # arguments
+
         robot_ip_arg,
         launch_rviz_arg,
         urdf_path_arg,
