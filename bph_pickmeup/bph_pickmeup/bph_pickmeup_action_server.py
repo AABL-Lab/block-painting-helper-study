@@ -16,7 +16,7 @@ Usage
 """
 
 import threading
-
+import time
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
@@ -54,7 +54,7 @@ JOINT_NAMES = [
 NAMED_POSITIONS: dict[str, list[float]] = {
     # joint angles in radians
     "home":      [0.0, -1.5707, 0.0, -1.5707, 0.0, 0.0],
-    "pre_grasp": [-1.32, -2.92, 0.0, -0.98, 1.55, 0.0],
+    "pre_grasp": [0.0, -3.037, -1.082, -0.977, 1.274, 0.173],
     "workspace": [0.0, -0.765, 1.73, -2.34, -0.64, 0.00],
     # add more named positions here
 }
@@ -160,14 +160,19 @@ class BphPickmeupServer(Node):
         feedback.progress      = 0.1
         goal_handle.publish_feedback(feedback)
 
-        # ---- Send to MoveIt (plan_only=True first to get plan confirmation) ----
+        # ---- Send to MoveIt (plan only) ----
         self.get_logger().info('Requesting plan from MoveIt...')
-        plan_goal          = self._build_moveit_goal(joint_angles)
-        plan_goal.planning_options.plan_only = True   # plan without executing
+        plan_goal = self._build_moveit_goal(joint_angles)
+        plan_goal.planning_options.plan_only = True
 
-        send_future = self._moveit_client.send_goal_async(plan_goal)
-        rclpy.spin_until_future_complete(self, send_future)
-        plan_handle = send_future.result()
+        plan_event = threading.Event()
+        plan_handle_box = [None]
+        def plan_accept_cb(f):
+            plan_handle_box[0] = f.result()
+            plan_event.set()
+        self._moveit_client.send_goal_async(plan_goal).add_done_callback(plan_accept_cb)
+        plan_event.wait()
+        plan_handle = plan_handle_box[0]
 
         if not plan_handle.accepted:
             feedback.current_state = 'planning_failed'
@@ -179,16 +184,19 @@ class BphPickmeupServer(Node):
             goal_handle.abort()
             return result
 
-        plan_result_future = plan_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, plan_result_future)
-        plan_result = plan_result_future.result().result
+        plan_result_event = threading.Event()
+        plan_result_box = [None]
+        def plan_result_cb(f):
+            plan_result_box[0] = f.result().result
+            plan_result_event.set()
+        plan_handle.get_result_async().add_done_callback(plan_result_cb)
+        plan_result_event.wait()
+        plan_result = plan_result_box[0]
 
         if plan_result.error_code.val != MoveItErrorCodes.SUCCESS:
-            # ---- Feedback: planning failed — state machine sees this and can act ----
             feedback.current_state = 'planning_failed'
             feedback.progress      = 0.0
             goal_handle.publish_feedback(feedback)
-
             result.success    = False
             result.error_code = plan_result.error_code.val
             result.message    = f'MoveIt planning failed: {plan_result.error_code.val}'
@@ -196,22 +204,14 @@ class BphPickmeupServer(Node):
             goal_handle.abort()
             return result
 
-        # ---- Feedback: planning_complete — state machine transitions here ----
-        #
-        # This is the key message.  The SMACH state is polling for exactly this
-        # string and will return 'planned' as soon as it arrives, transitioning
-        # to MovingToPickUpObject while the arm has not yet started moving.
-        #
+        # ---- Feedback: planning_complete ----
         feedback.current_state = 'planning_complete'
         feedback.progress      = 0.4
         goal_handle.publish_feedback(feedback)
         self.get_logger().info('Plan confirmed, publishing planning_complete feedback.')
 
-        # Small yield so the feedback message is flushed before we block again
-        import time
         time.sleep(0.05)
 
-        # Check for cancellation (the SMACH state may have moved on and cancelled)
         if goal_handle.is_cancel_requested:
             self.get_logger().info('Goal cancelled after planning.')
             goal_handle.canceled()
@@ -219,18 +219,23 @@ class BphPickmeupServer(Node):
             result.message = 'Cancelled after planning.'
             return result
 
-        # ---- Now execute the plan ----
+        # ---- Execute ----
         self.get_logger().info('Executing plan...')
         exec_goal = ExecuteTrajectory.Goal()
-        exec_goal.trajectory = plan_result.planned_trajectory # reuse the plan from before
-
+        exec_goal.trajectory = plan_result.planned_trajectory
+        
         feedback.current_state = 'executing'
         feedback.progress      = 0.6
         goal_handle.publish_feedback(feedback)
 
-        exec_future = self._execute_client.send_goal_async(exec_goal)
-        rclpy.spin_until_future_complete(self, exec_future)
-        exec_handle = exec_future.result()
+        exec_event = threading.Event()
+        exec_handle_box = [None]
+        def exec_accept_cb(f):
+            exec_handle_box[0] = f.result()
+            exec_event.set()
+        self._execute_client.send_goal_async(exec_goal).add_done_callback(exec_accept_cb)
+        exec_event.wait()
+        exec_handle = exec_handle_box[0]
 
         if not exec_handle.accepted:
             result.success    = False
@@ -239,8 +244,13 @@ class BphPickmeupServer(Node):
             goal_handle.abort()
             return result
 
-        exec_result_future = exec_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, exec_result_future)
+        exec_result_event = threading.Event()
+        exec_result_box = [None]
+        def exec_result_cb(f):
+            exec_result_box[0] = f.result().result
+            exec_result_event.set()
+        exec_handle.get_result_async().add_done_callback(exec_result_cb)
+        exec_result_event.wait()
 
         if goal_handle.is_cancel_requested:
             exec_handle.cancel_goal_async()
@@ -249,8 +259,8 @@ class BphPickmeupServer(Node):
             result.message = 'Cancelled during execution.'
             return result
 
-        exec_result  = exec_result_future.result().result
-        error_val    = exec_result.error_code.val
+        exec_result = exec_result_box[0]
+        error_val   = exec_result.error_code.val
 
         if error_val == MoveItErrorCodes.SUCCESS:
             feedback.current_state = 'done'
@@ -327,15 +337,15 @@ class BphPickmeupServer(Node):
         )
         pos_c.weight = 1.0
 
-        ori_c = OrientationConstraint()
-        ori_c.header = target_pose.header
-        ori_c.link_name = end_effector_link
-        ori_c.orientation = target_pose.pose.orientation
-        ori_c.absolute_x_axis_tolerance = 0.01
-        ori_c.absolute_y_axis_tolerance = 0.01
-        ori_c.absolute_z_axis_tolerance = 0.01
-        ori_c.weight = 1.0
-
+        #ori_c = OrientationConstraint()
+        #ori_c.header = target_pose.header
+        #ori_c.link_name = end_effector_link
+        #ori_c.orientation = target_pose.pose.orientation
+        #ori_c.absolute_x_axis_tolerance = 0.5
+        #ori_c.absolute_y_axis_tolerance = 0.5
+        #ori_c.absolute_z_axis_tolerance = 0.5
+        #ori_c.weight = 1.0
+        
         request = MotionPlanRequest()
         request.group_name = "ur_manipulator"
         request.num_planning_attempts = 10
@@ -348,7 +358,7 @@ class BphPickmeupServer(Node):
         request.workspace_parameters.max_corner = Vector3(x=1.0, y=1.0, z=1.0)
         constraints = Constraints()
         constraints.position_constraints = [pos_c]
-        constraints.orientation_constraints = [ori_c]
+        #constraints.orientation_constraints = [ori_c]
         request.goal_constraints = [constraints]
 
         goal = MoveGroup.Goal()

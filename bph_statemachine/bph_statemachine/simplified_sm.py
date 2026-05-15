@@ -530,7 +530,7 @@ class PickAndPlace(_FetchState):
             )
             self._node.get_logger().info(
                 "[PickAndPlace] Target pose: position=(%.3f, %.3f, %.3f) frame=%s"
-                % (pose.position.x, pose.position.y, pose.position.z, 
+                % (pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, 
                    pose.header.frame_id if hasattr(pose, 'header') else 'unknown')
     )
             req = MoveToPose.Request()
